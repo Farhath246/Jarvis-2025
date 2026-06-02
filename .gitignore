@@ -1,14 +1,105 @@
-# Ignore the envJarvis directory
-/envjarvis/
+<![CDATA[# =============================================================================
+#  JARVIS — AI Desktop Assistant  |  .gitignore
+# =============================================================================
 
-# Ignore contact.csv
+# ─── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.pyd
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ─── Virtual Environments ────────────────────────────────────────────────────
+venv/
+env/
+.env/
+.venv/
+ENV/
+envJarvis/
+envJarvis_old/
+
+# ─── Project Data & Databases ───────────────────────────────────────────────
+# SQLite databases (local state, not portable)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite3
+
+# Runtime-generated files
+jarvis_notes.txt
 contacts.csv
 
-# Ignore jarvis.db
-jarvis.db
+# AI-generated code output
+generated_codes/
 
-# Ignore Python bytecode files in backend
-/backend/__pycache__/ 
+# ─── Secrets & Credentials ──────────────────────────────────────────────────
+# API keys, cookies, auth tokens — NEVER commit these
+backend/cookie.json
+cookie.json
+.env
+.env.*
+*.env
+!.env.example
 
-# Ignore backend cookie.json
-/backend/cookie.json
+# ─── Face Recognition Data ──────────────────────────────────────────────────
+# Captured face images (large, user-specific dataset)
+backend/auth/samples/
+
+# Trained LBPH model (large binary, dynamically generated)
+backend/auth/trainer/
+
+# ─── Logs ────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ─── IDE & Editor ────────────────────────────────────────────────────────────
+# VS Code
+.vscode/
+!.vscode/extensions.json
+
+# JetBrains / PyCharm
+.idea/
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# ─── OS Generated ───────────────────────────────────────────────────────────
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.Trash-*
+]]>

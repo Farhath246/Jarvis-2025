@@ -1,0 +1,16 @@
+eel
+python-dotenv
+pvporcupine==1.9.5
+pyaudio
+pyautogui
+pygame
+pywhatkit
+google-generativeai
+SpeechRecognition
+numpy
+opencv-contrib-python
+Pillow
+pyttsx3
+requests
+pyjokes
+wikipedia
