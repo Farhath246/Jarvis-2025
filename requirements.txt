@@ -16,3 +16,5 @@ pyjokes
 wikipedia
 beautifulsoup4
 duckduckgo-search
+pywebview
+pyinstaller

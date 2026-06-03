@@ -43,6 +43,16 @@ The assistant runs two concurrent processes — the main application (web dashbo
 - Supports Hinglish and multilingual query detection
 - Configurable via API key in `config.py`
 
+### 🖥️ Standalone Desktop Mode
+- Runs the entire assistant in a standalone desktop window using **PyWebView**
+- Supports packaging into a single executable (.exe) for convenient Windows distribution
+- Avoids opening the dashboard in a default web browser
+
+### 🌐 Real-Time Web Search
+- Performs live web searching using the **DuckDuckGo Search** API
+- Automatically triggered by informational voice queries ("search for...", "who is...", "what is...")
+- Returns key summary snippets directly to the text-to-speech engine
+
 ### 🛠️ System & Web Automation
 | Command Category | Capabilities |
 |---|---|
@@ -184,6 +194,10 @@ To enable the AI chatbot and code generation features:
 
 ## ▶️ Running Jarvis
 
+### Browser Mode (Default)
+
+To run the application in your default web browser, execute:
+
 ```bash
 python run.py
 ```
@@ -196,6 +210,24 @@ This launches two concurrent processes:
 | **Process 2 — HotwordDetector** | Continuously listens for the wake words "Jarvis" or "Alexa" in the background |
 
 The web dashboard opens automatically at `http://127.0.0.1:8000/index.html`.
+
+### 🖥️ Desktop Mode (Standalone Window)
+
+To run the application in a standalone windowed desktop interface using `pywebview`:
+
+```bash
+python desktop.py
+```
+
+### 📦 Compiling into a Standalone Executable (.exe)
+
+You can package Jarvis into a single, standalone Windows executable using PyInstaller:
+
+```bash
+pyinstaller desktop.spec
+```
+
+The compiled application will be generated in the `dist/` directory.
 
 ---
 
@@ -218,6 +250,7 @@ Once authenticated, click the **Mic** button or say the hotword to start listeni
 | **Code Gen** | *"Write a Python script for sorting"*, *"Generate a calculator program"* |
 | **Jokes** | *"Tell me a joke"* |
 | **Close App** | *"Close notepad"*, *"Close chrome"* |
+| **Web Search** | *"Search for quantum mechanics"*, *"Who is Nikola Tesla"*, *"What is photosynthesis"* |
 | **AI Chat** | Any unrecognised query is routed to Gemini |
 | **Exit** | *"Stop"*, *"Shutdown"*, *"Exit"* |
 
@@ -260,6 +293,9 @@ All settings are in [`backend/config.py`](backend/config.py):
 | `pyjokes` | Random jokes |
 | `numpy` | Numerical operations for image processing |
 | `Pillow` | Image handling |
+| `pywebview` | Standalone app window for desktop mode |
+| `duckduckgo-search` | Live search fallback engine |
+| `pyinstaller` | Standalone Windows executable packaging |
 
 ---
 

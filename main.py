@@ -80,9 +80,12 @@ def start() -> None:
         speak("Retrying face authentication")
         run_face_auth()
 
-    # Open in default browser
-    webbrowser.open("http://127.0.0.1:8000/index.html")
+    # Open in default browser unless in desktop mode
+    import os
+    if os.environ.get("JARVIS_DESKTOP_MODE") != "1":
+        webbrowser.open("http://127.0.0.1:8000/index.html")
     eel.start("index.html", mode=None, host="localhost", block=True)
+
 
 
 if __name__ == "__main__":

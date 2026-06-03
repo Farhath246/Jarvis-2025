@@ -1,4 +1,4 @@
-<![CDATA[# =============================================================================
+# =============================================================================
 #  JARVIS — AI Desktop Assistant  |  .gitignore
 # =============================================================================
 
@@ -30,6 +30,11 @@ share/python-wheels/
 MANIFEST
 pip-log.txt
 pip-delete-this-directory.txt
+
+# PyInstaller
+# Play safe and commit .spec files, but ignore build output
+*.manifest
+# *.spec
 
 # ─── Virtual Environments ────────────────────────────────────────────────────
 venv/
@@ -102,4 +107,3 @@ $RECYCLE.BIN/
 # Linux
 *~
 .Trash-*
-]]>

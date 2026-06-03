@@ -27,10 +27,8 @@ def listenHotword():
     hotword()
 
 
-if __name__ == "__main__":
-    # Required for PyInstaller / frozen executables on Windows
-    multiprocessing.freeze_support()
-
+def main():
+    """Start and orchestrate the Jarvis and Hotword processes."""
     process1 = multiprocessing.Process(target=startJarvis,   name="JarvisApp")
     process2 = multiprocessing.Process(target=listenHotword, name="HotwordDetector")
 
@@ -49,9 +47,11 @@ if __name__ == "__main__":
         logger.info("Jarvis has shut down.")
         sys.exit(0)
 
-    # Register signal handlers for graceful shutdown
-    signal.signal(signal.SIGINT, shutdown)
-    signal.signal(signal.SIGTERM, shutdown)
+    # Register signal handlers for graceful shutdown (only works in main thread)
+    import threading
+    if threading.current_thread() is threading.main_thread():
+        signal.signal(signal.SIGINT, shutdown)
+        signal.signal(signal.SIGTERM, shutdown)
 
     try:
         process1.start()
@@ -68,3 +68,9 @@ if __name__ == "__main__":
             process2.join(timeout=5)
             logger.info("Process 2 (HotwordDetector) terminated.")
         logger.info("Jarvis has shut down.")
+
+
+if __name__ == "__main__":
+    # Required for PyInstaller / frozen executables on Windows
+    multiprocessing.freeze_support()
+    main()
