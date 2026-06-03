@@ -12,7 +12,7 @@ USER_NAME = "Syed Farhatullah"   # full name, used in face recognition label
 USER_CALL_NAME = "Farhath"       # friendly name Jarvis uses when speaking
 
 # TTS voice settings
-VOICE_INDEX = 1       # preferred SAPI5 voice index — system has 2 voices (0 & 1)
+VOICE_INDEX = 0       # preferred SAPI5 voice index — system has 2 voices (0 & 1)
 SPEECH_RATE = 174     # words per minute
 
 # Project root (absolute path, resolved from this file's location)

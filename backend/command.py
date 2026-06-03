@@ -16,7 +16,24 @@ logger = logging.getLogger(__name__)
 _speak_lock = threading.Lock()
 
 
-def speak(text: str) -> None:
+def clean_speech_text(text: str) -> str:
+    """Remove markdown syntax, links, and formatting for clean text-to-speech."""
+    import re
+    # Remove markdown links: [text](url) -> text
+    text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
+    # Remove citation brackets: [1], [2], etc.
+    text = re.sub(r'\[\d+\]', '', text)
+    # Remove bold/italic markers: **, *
+    text = re.sub(r'\*\*|__|\*|_', '', text)
+    # Remove code blocks and inline code
+    text = re.sub(r'```.*?```', '', text, flags=re.DOTALL)
+    text = re.sub(r'`[^`]+`', '', text)
+    # Clean up double spaces or trailing/leading whitespace
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
+
+def speak(text: str, sources: list = None) -> None:
     """
     Convert text to speech and display it in the UI.
     Creates a fresh pyttsx3 engine per call to avoid COM/threading issues on Windows.
@@ -44,13 +61,15 @@ def speak(text: str) -> None:
                 )
                 engine.setProperty("voice", voices[0].id)
             engine.setProperty("rate", SPEECH_RATE)
-            engine.say(text)
+            
+            cleaned_text = clean_speech_text(text)
+            engine.say(cleaned_text)
             engine.runAndWait()
         except Exception as e:
             logger.error("speak() TTS error: %s", e)
 
     try:
-        eel.receiverText(text)
+        eel.receiverText(text, sources)
     except Exception as e:
         logger.warning("eel.receiverText failed: %s", e)
 
@@ -112,7 +131,7 @@ def takeAllCommands(message: str = None) -> None:
             return
 
         # ── Stop / Shutdown / Exit ───────────────────────────────────────
-        if any(kw in query for kw in ["stop", "exit", "quit", "shutdown", "shut down"]):
+        if any(kw in query for kw in ["stop", "exit", "quit", "shutdown", "shut down", "bye"]):
             speak("Goodbye! Shutting down.")
             import os
             os._exit(0)
@@ -120,17 +139,24 @@ def takeAllCommands(message: str = None) -> None:
         # ── WhatsApp / call / message ────────────────────────────────────
         elif any(kw in query for kw in ["send message", "call", "video call"]):
             from backend.feature import findContact, whatsApp
-            Phone, name = findContact(query)
+            Phone, name, msg = findContact(query)
             if Phone != 0:
                 if "send message" in query:
                     flag = "message"
-                    speak("What message should I send?")
-                    query = takecommand() or ""
+                    if not msg:
+                        if message is not None:
+                            speak("Please specify the message. For example: send message to John that I am running late.")
+                            return
+                        else:
+                            speak("What message should I send?")
+                            msg = takecommand() or ""
                 elif "video call" in query:
                     flag = "video call"
+                    msg = ""
                 else:
                     flag = "call"
-                whatsApp(Phone, query, flag, name)
+                    msg = ""
+                whatsApp(Phone, msg, flag, name)
 
         # ── YouTube / Play ───────────────────────────────────────────────
         elif "play" in query:
@@ -171,8 +197,8 @@ def takeAllCommands(message: str = None) -> None:
             from backend.feature import openCommand
             openCommand(query)
 
-        # ── Wikipedia / Information (only when NOT opening something) ────
-        elif any(kw in query for kw in ["wikipedia", "who is", "what is", "information about", "info about"]):
+        # ── Wikipedia / Information (only when explicitly asked for wikipedia) ────
+        elif "wikipedia" in query:
             from backend.feature import search_wikipedia
             search_wikipedia(query)
 
@@ -208,6 +234,20 @@ def takeAllCommands(message: str = None) -> None:
         elif "read my notes" in query or "read notes" in query:
             from backend.feature import read_notes
             read_notes()
+
+        # ── Web Search (DuckDuckGo) ──────────────────────────────────────
+        elif any(kw in query for kw in ["search", "who is", "what is"]):
+            import re as _re
+            from backend.feature import web_search
+            search_query = _re.sub(
+                r"\b(search|search for|who is|what is)\b", "", query, flags=_re.IGNORECASE
+            ).strip()
+            if search_query:
+                speak(f"Searching the web for {search_query}...")
+                result = web_search(search_query)
+                speak(result)
+            else:
+                speak("Please tell me what to search for.")
 
         # ── AI Chatbot fallback ───────────────────────────────────────────
         else:

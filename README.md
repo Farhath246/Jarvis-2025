@@ -231,7 +231,7 @@ All settings are in [`backend/config.py`](backend/config.py):
 |---|---|---|
 | `USER_NAME` | `"Syed Farhatullah"` | Full name for face recognition label |
 | `USER_CALL_NAME` | `"Farhath"` | Friendly name Jarvis uses when speaking |
-| `VOICE_INDEX` | `1` | SAPI5 voice index (0 = male, 1 = female, varies by system) |
+| `VOICE_INDEX` | `0` | SAPI5 voice index (0 = male, 1 = female, varies by system) |
 | `SPEECH_RATE` | `174` | TTS words per minute |
 | `FACE_CONFIDENCE_THRESHOLD` | `45` | LBPH distance threshold (lower = stricter matching) |
 | `FACE_CONSECUTIVE_MATCHES` | `3` | Consecutive high-confidence frames needed to confirm identity |
@@ -251,7 +251,7 @@ All settings are in [`backend/config.py`](backend/config.py):
 | `python-dotenv` | Load environment variables from `.env` file |
 | `SpeechRecognition` | Microphone input → text |
 | `pyaudio` | Audio stream for speech recognition |
-| `google-generativeai` | Google Gemini API for AI chatbot & code gen |
+| `google-genai` | Google Gemini API for AI chatbot & code gen |
 | `pyautogui` | Keyboard/mouse automation (volume, typing, WhatsApp) |
 | `pywhatkit` | YouTube playback |
 | `pygame` | Audio playback for startup sound |

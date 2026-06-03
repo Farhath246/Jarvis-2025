@@ -606,3 +606,69 @@ textarea:focus-visible {
   #hud-bar .hud-brand { font-size: 11px; letter-spacing: 2px; }
   #hud-clock, #hud-date { font-size: 10px; }
 }
+
+/* ── Citations & Markdown formatting ──────────────────────────────────────── */
+.sources-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+}
+
+.source-chip {
+  background: var(--accent-dim);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--accent);
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: var(--transition);
+}
+
+.source-chip i {
+  font-size: 12px;
+}
+
+.source-chip:hover {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 0 10px var(--accent-glow);
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.chat-source-link {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px dashed var(--border);
+  padding: 1px 4px;
+  background: var(--accent-dim);
+  border-radius: 4px;
+  font-size: 0.9em;
+  margin: 0 2px;
+  display: inline-block;
+  transition: var(--transition);
+}
+
+.chat-source-link:hover {
+  color: #fff;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent-glow);
+  border-bottom-style: solid;
+}
+
+code {
+  font-family: monospace;
+  background: rgba(2, 4, 8, 0.4);
+  border: 1px solid var(--border);
+  padding: 2px 5px;
+  border-radius: 4px;
+  color: var(--accent);
+  font-size: 0.9em;
+}

@@ -102,15 +102,56 @@ $(document).ready(function () {
     setStatus('processing', 'Processing...');
   }
 
+  function formatMessage(message) {
+    // 1. Escape HTML to prevent XSS
+    let escaped = escapeHtml(message);
+    
+    // 2. Parse bold formatting **text** -> <strong>text</strong>
+    escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    
+    // 3. Parse inline code `code` -> <code>code</code>
+    escaped = escaped.replace(/`(.*?)`/g, '<code>$1</code>');
+
+    // 4. Parse markdown links [text](url) -> <a href="url" target="_blank" class="chat-source-link">text</a>
+    escaped = escaped.replace(/\[(.*?)\]\((https?:\/\/.*?)\)/g, function(match, text, url) {
+      return '<a href="' + url + '" target="_blank" class="chat-source-link">' + text + '</a>';
+    });
+
+    // 5. Replace newlines with <br/>
+    return escaped.replace(/\n/g, '<br/>');
+  }
+
   // ── eel-exposed: Jarvis response bubble ──────────────────────────────────
   eel.expose(receiverText);
-  function receiverText(message) {
+  function receiverText(message, sources) {
     if (!message || !message.trim()) return;
     hideTyping();
     var time = currentTime();
+    
+    var formattedMessage = formatMessage(message);
+
     var html = '<div class="row justify-content-start mb-2 animate__animated animate__fadeInLeft">'
       + '<div class="width-size">'
-      + '<div class="receiver_message">' + escapeHtml(message) + '</div>'
+      + '<div class="receiver_message">' + formattedMessage;
+
+    // Append sources if present
+    if (sources && sources.length > 0) {
+      html += '<div class="sources-container">';
+      sources.forEach(function (src) {
+        var domain = '';
+        try {
+          domain = new URL(src.url).hostname.replace('www.', '');
+        } catch(e) {
+          domain = 'Link';
+        }
+        html += '<a href="' + src.url + '" target="_blank" class="source-chip" title="' + escapeHtml(src.title) + '">'
+          + '<i class="bi bi-globe"></i> ' + escapeHtml(src.title || domain)
+          + '</a>';
+      });
+      html += '</div>';
+    }
+
+    html += '</div>'
       + '<div class="msg-timestamp">' + time + '</div>'
       + '</div></div>';
     appendMessage(html);
@@ -240,6 +281,15 @@ $(document).ready(function () {
     localStorage.setItem('jarvis-user-name', name);
     var el = document.getElementById('userName');
     if (el) el.textContent = name;
+  }
+
+  // ── eel-exposed: Web-RAG status updates from Python ───────────────────────
+  eel.expose(setWebStatus);
+  function setWebStatus(state, text) {
+    setStatus(state, text);
+    // Also update the siri-text for visibility in the SiriWave section
+    var siriText = document.getElementById('siri-text');
+    if (siriText) siriText.textContent = text;
   }
 
 });
