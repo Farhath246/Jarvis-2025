@@ -11,12 +11,26 @@ ASSISTANT_NAME = "jarvis"
 USER_NAME = "Syed Farhatullah"   # full name, used in face recognition label
 USER_CALL_NAME = "Farhath"       # friendly name Jarvis uses when speaking
 
-# TTS voice settings
+# TTS voice settings — pyttsx3 / SAPI5 (offline fallback)
 VOICE_INDEX = 0       # preferred SAPI5 voice index — system has 2 voices (0 & 1)
 SPEECH_RATE = 174     # words per minute
 
+# Edge-TTS settings — Microsoft Edge neural voices (primary, cloud-based)
+# Run `python -m edge_tts --list-voices` to see all available voices.
+# Popular choices:
+#   en-US-GuyNeural          — natural American male (default, fits "Jarvis")
+#   en-US-ChristopherNeural  — deeper, calm male
+#   en-US-AriaNeural         — friendly American female
+#   en-IN-PrabhatNeural      — Indian English male
+#   en-IN-NeerjaNeural       — Indian English female
+EDGE_TTS_VOICE = "en-US-GuyNeural"
+EDGE_TTS_RATE = "+0%"   # speed adjustment: "+10%", "-10%", etc.
+
 # Project root (absolute path, resolved from this file's location)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Temp directory for Edge-TTS generated audio files
+TTS_TEMP_DIR = os.path.join(BASE_DIR, ".tts_cache")
 
 # Audio
 SOUND_FILE = os.path.join(BASE_DIR, "frontend", "assets", "audio", "start_sound.mp3")

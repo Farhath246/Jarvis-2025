@@ -11,6 +11,7 @@ numpy
 opencv-contrib-python
 Pillow
 pyttsx3
+edge-tts
 requests
 pyjokes
 wikipedia

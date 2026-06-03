@@ -25,33 +25,34 @@ The assistant runs two concurrent processes — the main application (web dashbo
 ## 🚀 Key Features
 
 ### 🔐 Biometric Face Authentication
-- **LBPH (Local Binary Patterns Histograms)** face recogniser via OpenCV
-- **CLAHE** preprocessing for lighting-invariant detection
-- **Bilateral filtering** to reduce background noise while preserving facial edges
-- **Multi-frame voting** — requires consecutive high-confidence matches to confirm identity
-- Automatic blur detection during dataset capture for high-quality training samples
-- Configurable confidence threshold and frame count in `config.py`
+- **LBPH (Local Binary Patterns Histograms)** face recogniser via OpenCV.
+- **CLAHE** preprocessing for lighting-invariant detection.
+- **Bilateral filtering** to reduce background noise while preserving facial edges.
+- **Multi-frame voting** — requires consecutive high-confidence matches to confirm identity.
+- Automatic blur detection during dataset capture for high-quality training samples.
+- Configurable confidence threshold and frame count in `config.py`.
 
 ### 🗣️ Voice Interaction
-- **Hotword detection** — continuously listens for "Jarvis" or "Alexa" using Google Speech Recognition
-- **Speech-to-text** via Google Speech Recognition API
-- **Text-to-speech** via Windows SAPI5 engine (pyttsx3)
-- Text input also supported directly through the web dashboard
+- **Hotword detection** — continuously listens for "Jarvis" or "Alexa" using Google Speech Recognition.
+- **Speech-to-text** via Google Speech Recognition API.
+- **Text-to-speech** — Powered primarily by **Edge-TTS** (Microsoft Edge Neural Voices) for natural, high-quality, cloud-based voice response.
+- **Offline Fallback** — Automatically falls back to the local Windows **SAPI5 engine** (`pyttsx3`) if offline.
+- Text input also supported directly through the web dashboard.
 
 ### 🧠 AI Chatbot (Google Gemini)
-- Falls back to **Gemini 2.5 Flash** (free tier) when no built-in command matches
-- Supports Hinglish and multilingual query detection
-- Configurable via API key in `config.py`
+- Falls back to **Gemini 2.5 Flash** (free tier) when no built-in command matches.
+- Supports Hinglish and multilingual query detection.
+- Configurable via API key in `.env` file.
 
 ### 🖥️ Standalone Desktop Mode
-- Runs the entire assistant in a standalone desktop window using **PyWebView**
-- Supports packaging into a single executable (.exe) for convenient Windows distribution
-- Avoids opening the dashboard in a default web browser
+- Runs the entire assistant in a standalone desktop window using **PyWebView**.
+- Supports packaging into a single executable (.exe) for convenient Windows distribution.
+- Avoids opening the dashboard in a default web browser.
 
 ### 🌐 Real-Time Web Search
-- Performs live web searching using the **DuckDuckGo Search** API
-- Automatically triggered by informational voice queries ("search for...", "who is...", "what is...")
-- Returns key summary snippets directly to the text-to-speech engine
+- Performs live web searching using the **DuckDuckGo Search** API.
+- Automatically triggered by informational voice queries ("search for...", "who is...", "what is...").
+- Returns key summary snippets directly to the text-to-speech engine.
 
 ### 🛠️ System & Web Automation
 | Command Category | Capabilities |
@@ -79,10 +80,12 @@ Jarvis-2025/
 ├── run.py                      # Entry point — multi-process launcher
 ├── main.py                     # Process 1: Eel web server + face auth flow
 ├── requirements.txt            # Python dependencies
+├── activate_terminal.bat       # Helper to open a shell with activated virtualenv
+├── start.bat                   # Helper to activate virtualenv and launch Jarvis
 ├── backend/
 │   ├── __init__.py
 │   ├── config.py               # All configuration constants & thresholds
-│   ├── command.py              # Voice I/O engine + central command dispatcher
+│   ├── command.py              # Voice I/O engine (Edge-TTS / pyttsx3 fallback) + dispatcher
 │   ├── feature.py              # All feature implementations (YouTube, weather, etc.)
 │   ├── helper.py               # Text processing utilities
 │   ├── db.py                   # SQLite schema initialisation
@@ -104,6 +107,7 @@ Jarvis-2025/
 │       ├── audio/              # Startup sound effects
 │       ├── img/                # UI images & icons
 │       └── vendore/            # Vendor scripts
+├── .tts_cache/                 # [gitignored] Temporary neural voice audio cache
 ├── generated_codes/            # [gitignored] AI-generated code output
 └── jarvis.db                   # [gitignored] Local SQLite database
 ```
@@ -116,7 +120,7 @@ Jarvis-2025/
 
 | Requirement | Details |
 |---|---|
-| **OS** | Windows 10 / 11 (uses SAPI5 TTS and DirectShow camera) |
+| **OS** | Windows 10 / 11 (uses SAPI5 fallback and DirectShow camera) |
 | **Python** | 3.10.x recommended |
 | **Webcam** | Required for face authentication |
 | **Microphone** | Required for voice commands & hotword detection |
@@ -124,10 +128,10 @@ Jarvis-2025/
 ### Step 1 — Clone & Install Dependencies
 
 ```bash
-git clone https://github.com/ankitpathak62/Jarvis-2025.git
+git clone https://github.com/Farhath246/Jarvis-2025.git
 cd Jarvis-2025
-python -m venv venv
-venv\Scripts\activate
+python -m venv envJarvis
+envJarvis\Scripts\activate
 pip install -r requirements.txt
 ```
 
@@ -169,8 +173,8 @@ Edit [`backend/config.py`](backend/config.py) to personalise:
 ```python
 USER_NAME      = "Your Full Name"     # Used as face recognition label
 USER_CALL_NAME = "Your Nickname"      # How Jarvis addresses you
-VOICE_INDEX    = 1                    # SAPI5 voice (0 or 1)
-SPEECH_RATE    = 174                  # Words per minute
+EDGE_TTS_VOICE = "en-US-GuyNeural"    # Primary Edge-TTS neural voice
+EDGE_TTS_RATE  = "+0%"                # Speech rate modifier
 ```
 
 ### Step 6 — Set Up Gemini API Key (Optional)
@@ -182,7 +186,7 @@ To enable the AI chatbot and code generation features:
    copy .env.example .env
    ```
 2. Get a free API key at [Google AI Studio](https://aistudio.google.com/app/apikey)
-3. Open [`.env`](.env.example) and set your key:
+3. Open [`.env`](.env) and set your key:
    ```env
    GEMINI_API_KEY=your_actual_api_key_here
    ```
@@ -201,6 +205,7 @@ To run the application in your default web browser, execute:
 ```bash
 python run.py
 ```
+Or simply double-click the `start.bat` script.
 
 This launches two concurrent processes:
 
@@ -264,8 +269,10 @@ All settings are in [`backend/config.py`](backend/config.py):
 |---|---|---|
 | `USER_NAME` | `"Syed Farhatullah"` | Full name for face recognition label |
 | `USER_CALL_NAME` | `"Farhath"` | Friendly name Jarvis uses when speaking |
-| `VOICE_INDEX` | `0` | SAPI5 voice index (0 = male, 1 = female, varies by system) |
-| `SPEECH_RATE` | `174` | TTS words per minute |
+| `VOICE_INDEX` | `0` | SAPI5 fallback voice index (0 = male, 1 = female) |
+| `SPEECH_RATE` | `174` | Fallback SAPI5 speech rate (words per minute) |
+| `EDGE_TTS_VOICE` | `"en-US-GuyNeural"` | Primary Edge-TTS neural voice |
+| `EDGE_TTS_RATE` | `"+0%"` | Edge-TTS speech speed adjustment |
 | `FACE_CONFIDENCE_THRESHOLD` | `45` | LBPH distance threshold (lower = stricter matching) |
 | `FACE_CONSECUTIVE_MATCHES` | `3` | Consecutive high-confidence frames needed to confirm identity |
 | `FACE_AUTH_TIMEOUT` | `30` | Seconds before face auth gives up |
@@ -280,14 +287,15 @@ All settings are in [`backend/config.py`](backend/config.py):
 |---|---|
 | `eel` | Python ↔ JavaScript bridge for the web UI |
 | `opencv-contrib-python` | Face detection & LBPH recognition |
-| `pyttsx3` | Text-to-speech (Windows SAPI5) |
+| `pyttsx3` | Text-to-speech fallback (Windows SAPI5) |
+| `edge-tts` | Primary high-quality neural voice text-to-speech |
 | `python-dotenv` | Load environment variables from `.env` file |
 | `SpeechRecognition` | Microphone input → text |
 | `pyaudio` | Audio stream for speech recognition |
 | `google-genai` | Google Gemini API for AI chatbot & code gen |
 | `pyautogui` | Keyboard/mouse automation (volume, typing, WhatsApp) |
 | `pywhatkit` | YouTube playback |
-| `pygame` | Audio playback for startup sound |
+| `pygame` | Audio playback for startup and Edge-TTS playback |
 | `requests` | HTTP requests (weather API) |
 | `wikipedia` | Wikipedia search & summaries |
 | `pyjokes` | Random jokes |

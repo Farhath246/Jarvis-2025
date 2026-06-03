@@ -1,3 +1,16 @@
 {
-    "python.pythonPath": "C:\\Users\\ANKIT PATHAK\\AppData\\Local\\Programs\\Python\\Python310\\python.exe"
+    "python.defaultInterpreterPath": "${workspaceFolder}/envJarvis/Scripts/python.exe",
+    "python.terminal.activateEnvInCurrentTerminal": true,
+    "python.terminal.activateEnvironment": true,
+    "terminal.integrated.profiles.windows": {
+        "PowerShell (envJarvis)": {
+            "source": "PowerShell",
+            "args": ["-NoExit", "-ExecutionPolicy", "Bypass", "-Command", "& '${workspaceFolder}/envJarvis/Scripts/Activate.ps1'"]
+        },
+        "Command Prompt (envJarvis)": {
+            "path": "cmd.exe",
+            "args": ["/k", "${workspaceFolder}\\envJarvis\\Scripts\\activate.bat"]
+        }
+    },
+    "terminal.integrated.defaultProfile.windows": "PowerShell (envJarvis)"
 }

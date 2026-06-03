@@ -63,8 +63,9 @@ def get_db():
     conn.row_factory = sqlite3.Row
     return conn
 
-# ── pygame mixer ─────────────────────────────────────────────────────────────
-pygame.mixer.init()
+# ── pygame mixer (guarded — command.py may also init for Edge-TTS playback) ──
+if not pygame.mixer.get_init():
+    pygame.mixer.init()
 
 
 # ─────────────────────────────────────────────────────────────────────────────

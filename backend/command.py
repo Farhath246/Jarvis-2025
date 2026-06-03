@@ -2,18 +2,41 @@
 command.py — Voice I/O and main command dispatcher for Jarvis.
 """
 
+import asyncio
 import logging
+import os
 import threading
+import time
 import speech_recognition as sr
 import eel
 
-from backend.config import ASSISTANT_NAME, VOICE_INDEX, SPEECH_RATE
+from backend.config import (
+    ASSISTANT_NAME, VOICE_INDEX, SPEECH_RATE,
+    EDGE_TTS_VOICE, EDGE_TTS_RATE, TTS_TEMP_DIR,
+)
 
 # ── Logging ──────────────────────────────────────────────────────────────────────
 logger = logging.getLogger(__name__)
 
-# Thread lock to ensure pyttsx3 is only used from one thread at a time
+# Thread lock to ensure TTS is only used from one thread at a time
 _speak_lock = threading.Lock()
+
+# ── Pygame mixer (lazy init) ────────────────────────────────────────────────────
+_pygame_ready = False
+
+
+def _init_pygame():
+    """Initialise pygame mixer once (safe to call multiple times)."""
+    global _pygame_ready
+    if _pygame_ready:
+        return
+    try:
+        import pygame
+        if not pygame.mixer.get_init():
+            pygame.mixer.init()
+        _pygame_ready = True
+    except Exception as e:
+        logger.warning("pygame.mixer init failed: %s", e)
 
 
 def clean_speech_text(text: str) -> str:
@@ -33,12 +56,101 @@ def clean_speech_text(text: str) -> str:
     return text
 
 
+# ── Edge-TTS (async helper) ─────────────────────────────────────────────────────
+async def _edge_tts_generate(text: str, output_path: str) -> None:
+    """Generate an MP3 file from text using Edge-TTS neural voices."""
+    import edge_tts
+    communicate = edge_tts.Communicate(text, EDGE_TTS_VOICE, rate=EDGE_TTS_RATE)
+    await communicate.save(output_path)
+
+
+def _speak_edge_tts(cleaned_text: str) -> bool:
+    """
+    Try to speak using Edge-TTS + pygame playback.
+    Returns True on success, False on any failure.
+    """
+    import pygame
+
+    _init_pygame()
+
+    # Ensure temp directory exists
+    os.makedirs(TTS_TEMP_DIR, exist_ok=True)
+
+    # Generate a unique temp filename using thread id + timestamp
+    temp_file = os.path.join(
+        TTS_TEMP_DIR,
+        f"tts_{threading.current_thread().ident}_{int(time.time() * 1000)}.mp3"
+    )
+
+    try:
+        # Generate the audio file via Edge-TTS.
+        # Use a dedicated event loop with proper cleanup instead of asyncio.run()
+        # to avoid ResourceWarning from unclosed transports when eel's gevent
+        # event loop is also running.
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(_edge_tts_generate(cleaned_text, temp_file))
+        finally:
+            # Shut down async generators and close the loop cleanly
+            loop.run_until_complete(loop.shutdown_asyncgens())
+            loop.close()
+
+        # Play the generated audio using pygame
+        pygame.mixer.music.load(temp_file)
+        pygame.mixer.music.play()
+
+        # Wait for playback to finish (non-blocking poll)
+        while pygame.mixer.music.get_busy():
+            time.sleep(0.1)
+
+        return True
+
+    except Exception as e:
+        logger.warning("Edge-TTS failed (will fall back to pyttsx3): %s", e)
+        return False
+
+    finally:
+        # Clean up: unload and delete temp file
+        try:
+            pygame.mixer.music.unload()
+        except Exception:
+            pass
+        try:
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+        except Exception:
+            pass
+
+
+def _speak_pyttsx3(cleaned_text: str) -> None:
+    """Fallback: speak using pyttsx3 SAPI5 engine (offline, robotic voice)."""
+    import pyttsx3
+    try:
+        engine = pyttsx3.init("sapi5")
+        voices = engine.getProperty("voices")
+        # Safe voice selection — fall back to index 0 if preferred index missing
+        if voices and VOICE_INDEX < len(voices):
+            engine.setProperty("voice", voices[VOICE_INDEX].id)
+        elif voices:
+            logger.warning(
+                "Voice index %d not available (%d voices found). Using index 0.",
+                VOICE_INDEX, len(voices)
+            )
+            engine.setProperty("voice", voices[0].id)
+        engine.setProperty("rate", SPEECH_RATE)
+        engine.say(cleaned_text)
+        engine.runAndWait()
+    except Exception as e:
+        logger.error("pyttsx3 fallback TTS error: %s", e)
+
+
 def speak(text: str, sources: list = None) -> None:
     """
     Convert text to speech and display it in the UI.
-    Creates a fresh pyttsx3 engine per call to avoid COM/threading issues on Windows.
+
+    Primary:  Edge-TTS (Microsoft neural voices — natural, cloud-based).
+    Fallback: pyttsx3 SAPI5 (offline, robotic — used when internet is down).
     """
-    import pyttsx3
     text = str(text)
     logger.info("Jarvis says: %s", text)
 
@@ -48,25 +160,14 @@ def speak(text: str, sources: list = None) -> None:
         logger.warning("eel.DisplayMessage failed: %s", e)
 
     with _speak_lock:
-        try:
-            engine = pyttsx3.init("sapi5")
-            voices = engine.getProperty("voices")
-            # Safe voice selection — fall back to index 0 if preferred index missing
-            if voices and VOICE_INDEX < len(voices):
-                engine.setProperty("voice", voices[VOICE_INDEX].id)
-            elif voices:
-                logger.warning(
-                    "Voice index %d not available (%d voices found). Using index 0.",
-                    VOICE_INDEX, len(voices)
-                )
-                engine.setProperty("voice", voices[0].id)
-            engine.setProperty("rate", SPEECH_RATE)
-            
-            cleaned_text = clean_speech_text(text)
-            engine.say(cleaned_text)
-            engine.runAndWait()
-        except Exception as e:
-            logger.error("speak() TTS error: %s", e)
+        cleaned_text = clean_speech_text(text)
+        if not cleaned_text:
+            logger.info("Nothing to speak after cleaning text.")
+        else:
+            # Try Edge-TTS first; fall back to pyttsx3 on failure
+            if not _speak_edge_tts(cleaned_text):
+                logger.info("Using pyttsx3 (SAPI5) fallback for speech.")
+                _speak_pyttsx3(cleaned_text)
 
     try:
         eel.receiverText(text, sources)

@@ -31,10 +31,8 @@ MANIFEST
 pip-log.txt
 pip-delete-this-directory.txt
 
-# PyInstaller
-# Play safe and commit .spec files, but ignore build output
+# PyInstaller Spec
 *.manifest
-# *.spec
 
 # ─── Virtual Environments ────────────────────────────────────────────────────
 venv/
@@ -56,6 +54,9 @@ envJarvis_old/
 # Runtime-generated files
 jarvis_notes.txt
 contacts.csv
+
+# Edge-TTS temporary audio cache
+.tts_cache/
 
 # AI-generated code output
 generated_codes/
