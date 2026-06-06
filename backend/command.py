@@ -176,7 +176,13 @@ def speak(text: str, sources: list = None) -> None:
 
 
 def takecommand() -> str | None:
-    """Listen to the microphone and return recognised text, or None on failure."""
+    """
+    Listen to the microphone and return recognised text, or None on failure.
+
+    STT priority:
+      1. Whisper (offline, multilingual — if installed and enabled)
+      2. Google Speech Recognition (online, English — fallback)
+    """
     r = sr.Recognizer()
     try:
         with sr.Microphone() as source:
@@ -188,8 +194,24 @@ def takecommand() -> str | None:
 
         logger.info("Recognising...")
         eel.DisplayMessage("Recognising...")
+
+        # ── Try Whisper first (offline, multilingual) ─────────────────
+        try:
+            from backend.audio_engine import transcribe_audio, is_whisper_available
+            if is_whisper_available():
+                whisper_result = transcribe_audio(audio)
+                if whisper_result:
+                    logger.info("Whisper recognised: %s", whisper_result)
+                    eel.DisplayMessage(whisper_result)
+                    return whisper_result.lower()
+                else:
+                    logger.info("Whisper returned empty — falling back to Google STT.")
+        except Exception as whisper_err:
+            logger.warning("Whisper failed, falling back to Google STT: %s", whisper_err)
+
+        # ── Fallback: Google Speech Recognition (online) ──────────────
         query = r.recognize_google(audio, language="en-US")
-        logger.info("User said: %s", query)
+        logger.info("Google STT recognised: %s", query)
         eel.DisplayMessage(query)
         return query.lower()
 
@@ -204,6 +226,14 @@ def takecommand() -> str | None:
     except Exception as e:
         logger.error("takecommand() error: %s", e)
         return None
+
+
+# ── Whisper model preload (non-blocking) ─────────────────────────────────────
+try:
+    from backend.audio_engine import preload_model as _preload_whisper
+    _preload_whisper()
+except Exception:
+    pass  # Whisper not installed — no problem
 
 
 # ── Main Dispatcher ───────────────────────────────────────────────────────────
@@ -237,6 +267,36 @@ def takeAllCommands(message: str = None) -> None:
             import os
             os._exit(0)
 
+        # ── Memory Commands ──────────────────────────────────────────────
+        elif any(kw in query for kw in ["what do you remember", "what you remember", "my memory", "your memory"]):
+            from backend.feature import memory_summary
+            memory_summary()
+
+        elif any(kw in query for kw in ["forget everything", "clear memory", "wipe memory", "erase memory", "delete memory"]):
+            from backend.feature import memory_forget
+            memory_forget()
+
+        elif any(kw in query for kw in ["remember that", "remember this", "keep in mind"]):
+            from backend.feature import memory_remember
+            memory_remember(query)
+
+        elif any(kw in query for kw in ["search memory", "search my memory", "recall"]):
+            from backend.feature import memory_search
+            memory_search(query)
+
+        # ── Data & AutoML Commands ───────────────────────────────────────
+        elif any(kw in query for kw in ["analyze data", "analyze stats", "analyze csv", "analyze json", "dataset statistics"]):
+            from backend.feature import analyze_dataset_voice
+            analyze_dataset_voice(query)
+
+        elif any(kw in query for kw in ["train model", "train machine learning", "automl training"]):
+            from backend.feature import train_automl_model_voice
+            train_automl_model_voice(query)
+
+        elif any(kw in query for kw in ["predict", "model prediction", "make a prediction"]):
+            from backend.feature import predict_automl_model_voice
+            predict_automl_model_voice(query)
+
         # ── WhatsApp / call / message ────────────────────────────────────
         elif any(kw in query for kw in ["send message", "call", "video call"]):
             from backend.feature import findContact, whatsApp
@@ -259,13 +319,65 @@ def takeAllCommands(message: str = None) -> None:
                     msg = ""
                 whatsApp(Phone, msg, flag, name)
 
+        # ── Spotify Controls ─────────────────────────────────────────────
+        elif "spotify" in query and "play" in query:
+            from backend.feature import spotify_play
+            spotify_play(query)
+
+        elif any(kw in query for kw in ["pause spotify", "spotify pause", "pause music"]):
+            from backend.feature import spotify_pause
+            spotify_pause()
+
+        elif any(kw in query for kw in ["resume spotify", "spotify resume", "unpause spotify", "continue music"]):
+            from backend.feature import spotify_resume
+            spotify_resume()
+
+        elif any(kw in query for kw in ["next track", "skip track", "next song", "spotify next"]):
+            from backend.feature import spotify_next
+            spotify_next()
+
+        elif any(kw in query for kw in ["previous track", "last track", "go back track", "spotify previous"]):
+            from backend.feature import spotify_previous
+            spotify_previous()
+
+        elif any(kw in query for kw in ["what's playing", "now playing", "current song", "current track", "which song"]):
+            from backend.feature import spotify_now_playing
+            spotify_now_playing()
+
+        # ── Email ────────────────────────────────────────────────────────
+        elif any(kw in query for kw in ["read email", "check email", "read my email", "check my email", "check inbox", "read inbox"]):
+            from backend.feature import read_emails
+            read_emails(query)
+
+        elif "send email" in query or "email to" in query:
+            from backend.feature import send_email
+            send_email(query)
+
+        # ── Google Calendar ──────────────────────────────────────────────
+        elif any(kw in query for kw in ["my events", "my calendar", "today's events", "tomorrow's events", "calendar events"]):
+            from backend.feature import read_calendar_events
+            read_calendar_events(query)
+
+        elif any(kw in query for kw in ["schedule ", "add event", "create event", "calendar event"]):
+            from backend.feature import add_calendar_event
+            add_calendar_event(query)
+
+        # ── Sandbox Code Execution ───────────────────────────────────────
+        elif any(kw in query for kw in ["run code", "run the code", "execute code", "execute script", "run script", "test the code", "run the script"]):
+            from backend.feature import run_sandboxed_code
+            run_sandboxed_code(query)
+
         # ── YouTube / Play ───────────────────────────────────────────────
         elif "play" in query:
             from backend.feature import PlayYoutube
             success = PlayYoutube(query)
-            if not success and "open" in query:
-                from backend.feature import openCommand
-                openCommand(query)
+            if not success:
+                if "open" in query:
+                    from backend.feature import openCommand
+                    openCommand(query)
+                else:
+                    from backend.feature import chatBot
+                    chatBot(query)
 
         # ── Code Generation ──────────────────────────────────────────────
         elif ("code" in query or "program" in query or "script" in query) and any(kw in query for kw in ["write", "generate", "create", "make"]):
@@ -292,6 +404,11 @@ def takeAllCommands(message: str = None) -> None:
             from backend.feature import tell_weather
             tell_weather(query)
 
+        # ── Hardware Monitoring ──────────────────────────────────────────
+        elif any(kw in query for kw in ["cpu", "ram status", "battery", "hardware status", "system status"]):
+            from backend.feature import tell_hardware_status
+            tell_hardware_status(query)
+
         # ── App / URL open — checked BEFORE wikipedia so "open wikipedia"
         #    opens the site instead of searching wikipedia for "open" ─────
         elif "open" in query:
@@ -307,6 +424,15 @@ def takeAllCommands(message: str = None) -> None:
         elif any(kw in query for kw in ["screenshot", "screen short", "screen shot"]):
             from backend.feature import take_screenshot
             take_screenshot()
+
+        # ── Timers & Alarms ──────────────────────────────────────────────
+        elif "timer" in query:
+            from backend.feature import set_timer_command
+            set_timer_command(query)
+
+        elif "alarm" in query:
+            from backend.feature import set_alarm_command
+            set_alarm_command(query)
 
         # ── Volume ───────────────────────────────────────────────────────
         elif "increase volume" in query or "volume up" in query:

@@ -2,7 +2,7 @@
 
 # 🤖 JARVIS — AI Desktop Assistant
 
-**A voice-controlled, AI-powered desktop assistant with biometric face authentication and a sleek web-based dashboard.**
+**A voice-controlled, AI-powered desktop assistant with biometric face authentication, persistent memory, offline Whisper speech recognition, and a sleek web-based monitoring dashboard.**
 
 ![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![Platform](https://img.shields.io/badge/Platform-Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)
@@ -32,15 +32,37 @@ The assistant runs two concurrent processes — the main application (web dashbo
 - Automatic blur detection during dataset capture for high-quality training samples.
 - Configurable confidence threshold and frame count in `config.py`.
 
-### 🗣️ Voice Interaction
-- **Hotword detection** — continuously listens for "Jarvis" or "Alexa" using Google Speech Recognition.
-- **Speech-to-text** via Google Speech Recognition API.
+### 🗣️ Voice Interaction & Offline Speech
+- **Hotword detection** — continuously listens for "Jarvis" or "Alexa" in the background.
+- **Local STT (Whisper)** — Uses **OpenAI Whisper** for high-accuracy local, offline speech-to-text.
+- **Online STT (Fallback)** — Gracefully falls back to the online Google Speech Recognition API if Whisper is not installed or enabled.
 - **Text-to-speech** — Powered primarily by **Edge-TTS** (Microsoft Edge Neural Voices) for natural, high-quality, cloud-based voice response.
-- **Offline Fallback** — Automatically falls back to the local Windows **SAPI5 engine** (`pyttsx3`) if offline.
+- **Offline TTS Fallback** — Automatically falls back to the local Windows **SAPI5 engine** (`pyttsx3`) if offline.
 - Text input also supported directly through the web dashboard.
 
+### 🧠 Persistent Memory System
+- **SQLite Memory Store**: Securely stores structured conversation histories, user preferences, and learned facts.
+- **Automatic Fact Extraction**: Extracts user facts and preferences from conversation context using Gemini.
+- **ChromaDB Semantic Search (Optional)**: Performs high-performance vector search over memories (falls back to keyword-based search if ChromaDB is not installed).
+
+### 🎵 Advanced Integrations
+- **Spotify Music Control**: Play specific tracks, pause, resume, skip, or get the currently playing song via the Spotify Web API.
+- **Email Client**: Check/read your latest Gmail/IMAP inbox messages and send emails via SMTP (supports Gmail App Passwords).
+- **Google Calendar**: View daily schedules, upcoming calendar events, and dynamically create new events using the Google Calendar API.
+- **Secure Sandbox Execution**: Run generated python scripts in an isolated subprocess sandbox with configurable timeouts.
+
+### 📊 Performance & API Monitoring
+- **Log Tracking**: Records all API call latencies, model parameters, token counts, and error details in the local SQLite database.
+- **Analytics Dashboard**: Sleek monitoring interface (`frontend/monitor.html`) displaying daily statistics, hourly activity histograms, service breakdown, and recent errors.
+
+### 🤖 AutoML & Data Pipeline
+- **Data Ingestion**: Standardizes CSV/JSON data and automatically imputes missing values.
+- **Auto Task Detection**: Analyzes target column values to automatically detect whether a task is classification or regression.
+- **Lightweight scikit-learn training**: Trains and evaluates optimized Decision Trees with a single command.
+- **Interactive Prediction**: Make predictions using trained models directly through voice commands.
+
 ### 🧠 AI Chatbot (Google Gemini)
-- Falls back to **Gemini 2.5 Flash** (free tier) when no built-in command matches.
+- Falls back to **Gemini 2.5 Flash** (free tier) or local **Ollama** when no built-in command matches.
 - Supports Hinglish and multilingual query detection.
 - Configurable via API key in `.env` file.
 
@@ -54,23 +76,6 @@ The assistant runs two concurrent processes — the main application (web dashbo
 - Automatically triggered by informational voice queries ("search for...", "who is...", "what is...").
 - Returns key summary snippets directly to the text-to-speech engine.
 
-### 🛠️ System & Web Automation
-| Command Category | Capabilities |
-|---|---|
-| **App / Website Launcher** | Opens local apps and web URLs from a SQLite database, plus 18+ well-known sites as fallback |
-| **YouTube Player** | Extracts search terms and plays videos via `pywhatkit` |
-| **WhatsApp Integration** | Send messages, make voice calls, or start video calls via WhatsApp URI schemes + PyAutoGUI |
-| **Weather** | Free weather via `wttr.in` (no API key needed) |
-| **Wikipedia** | Search and read 2-sentence summaries; falls back to Google if nothing found |
-| **Screenshot** | Captures and saves to Desktop with timestamp |
-| **Volume Control** | System volume up / down |
-| **Typing** | Dictates text directly into any focused application |
-| **Notes** | Save and read back timestamped notes (`jarvis_notes.txt`) |
-| **Jokes** | Random programming jokes via `pyjokes` |
-| **Code Generation** | Uses Gemini to generate code files, saves to `generated_codes/`, and opens in VS Code |
-| **Close App** | Terminates running applications by name via `taskkill` |
-| **Date & Time** | Reads out the current date and time |
-
 ---
 
 ## 📁 Project Structure
@@ -79,19 +84,28 @@ The assistant runs two concurrent processes — the main application (web dashbo
 Jarvis-2025/
 ├── run.py                      # Entry point — multi-process launcher
 ├── main.py                     # Process 1: Eel web server + face auth flow
+├── desktop.py                  # Standalone desktop client using PyWebView
 ├── requirements.txt            # Python dependencies
 ├── activate_terminal.bat       # Helper to open a shell with activated virtualenv
 ├── start.bat                   # Helper to activate virtualenv and launch Jarvis
+├── TECH_STACK.md               # Technology integration overview
 ├── backend/
 │   ├── __init__.py
 │   ├── config.py               # All configuration constants & thresholds
-│   ├── command.py              # Voice I/O engine (Edge-TTS / pyttsx3 fallback) + dispatcher
-│   ├── feature.py              # All feature implementations (YouTube, weather, etc.)
+│   ├── command.py              # Voice I/O engine + dispatcher
+│   ├── feature.py              # Feature implementations (YouTube, weather, APIs, sandbox)
 │   ├── helper.py               # Text processing utilities
 │   ├── db.py                   # SQLite schema initialisation
+│   ├── audio_engine.py         # OpenAI Whisper speech transcription engine
+│   ├── automl.py               # Machine learning model training pipeline
+│   ├── data_pipeline.py        # Dataset loading & cleaning module
+│   ├── memory.py               # User preferences & memory context manager
+│   ├── memory_search.py        # SQLite keyword + ChromaDB semantic memory search
+│   ├── monitor.py              # Performance logs & error tracking recorder
+│   ├── web_rag.py              # Real-time Web RAG using BeautifulSoup & Gemini
 │   ├── cookie.json             # [gitignored] HuggingChat session cookies
 │   └── auth/
-│       ├── sample.py           # Webcam face dataset capture (200 frames + augmentation)
+│       ├── sample.py           # Webcam face dataset capture
 │       ├── trainer.py          # LBPH model training script
 │       ├── recoganize.py       # Real-time face authentication
 │       ├── haarcascade_frontalface_default.xml  # OpenCV Haar cascade
@@ -103,11 +117,19 @@ Jarvis-2025/
 │   ├── controller.js           # JavaScript ↔ Eel bridge
 │   ├── main.js                 # Page initialisation logic
 │   ├── script.js               # Canvas animations & visual effects
+│   ├── monitor.html            # Performance analytics dashboard GUI
 │   └── assets/
 │       ├── audio/              # Startup sound effects
 │       ├── img/                # UI images & icons
 │       └── vendore/            # Vendor scripts
+├── smoke_test.py               # General pre-launch sanity checker
+├── smoke_test_audio.py         # Whisper offline speech recognition verification test
+├── smoke_test_automl.py        # AutoML data cleaning, training & prediction verification test
+├── smoke_test_memory.py        # SQLite + ChromaDB memory & context extraction test
+├── smoke_test_monitoring.py    # Performance & API log tracking verification test
 ├── .tts_cache/                 # [gitignored] Temporary neural voice audio cache
+├── .models/                    # [gitignored] Saved AutoML model pkl files
+├── .chromadb/                  # [gitignored] ChromaDB vector database files
 ├── generated_codes/            # [gitignored] AI-generated code output
 └── jarvis.db                   # [gitignored] Local SQLite database
 ```
@@ -121,7 +143,7 @@ Jarvis-2025/
 | Requirement | Details |
 |---|---|
 | **OS** | Windows 10 / 11 (uses SAPI5 fallback and DirectShow camera) |
-| **Python** | 3.10.x recommended |
+| **Python** | 3.10 - 3.13 recommended |
 | **Webcam** | Required for face authentication |
 | **Microphone** | Required for voice commands & hotword detection |
 
@@ -144,7 +166,7 @@ pip install -r requirements.txt
 
 ### Step 2 — Initialise the Database
 
-Create the SQLite tables for apps, websites, and contacts:
+Create the SQLite tables for apps, websites, contacts, performance logs, AutoML models, and memories:
 
 ```bash
 python -m backend.db
@@ -168,31 +190,37 @@ python -m backend.auth.trainer
 
 ### Step 5 — Configure Your Settings
 
-Edit [`backend/config.py`](backend/config.py) to personalise:
+Edit [`backend/config.py`](backend/config.py) or set environment variables in `.env` to personalize your assistant:
 
-```python
-USER_NAME      = "Your Full Name"     # Used as face recognition label
-USER_CALL_NAME = "Your Nickname"      # How Jarvis addresses you
-EDGE_TTS_VOICE = "en-US-GuyNeural"    # Primary Edge-TTS neural voice
-EDGE_TTS_RATE  = "+0%"                # Speech rate modifier
+```bash
+copy .env.example .env
 ```
 
-### Step 6 — Set Up Gemini API Key (Optional)
+Open [`.env`](.env) and configure the services you want to use:
 
-To enable the AI chatbot and code generation features:
+```env
+# Google Gemini API (Required for chatbot features)
+GEMINI_API_KEY=your_gemini_api_key
 
-1. Copy the environment template:
-   ```bash
-   copy .env.example .env
-   ```
-2. Get a free API key at [Google AI Studio](https://aistudio.google.com/app/apikey)
-3. Open [`.env`](.env) and set your key:
-   ```env
-   GEMINI_API_KEY=your_actual_api_key_here
-   ```
+# Local LLM Fallback (Optional)
+OLLAMA_HOST=http://localhost:11434
+OLLAMA_MODEL=qwen2.5:1.5b
 
-> [!CAUTION]
-> The `.env` file is gitignored. Never commit API keys to version control.
+# Spotify Web API
+SPOTIFY_CLIENT_ID=your_spotify_client_id
+SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
+SPOTIFY_REDIRECT_URI=http://localhost:8888/callback
+
+# Email Configuration
+EMAIL_ADDRESS=your_email@gmail.com
+EMAIL_PASSWORD=your_gmail_app_password
+
+# IMAP/SMTP details if not using standard Gmail
+IMAP_SERVER=imap.gmail.com
+IMAP_PORT=993
+SMTP_SERVER=smtp.gmail.com
+SMTP_PORT=587
+```
 
 ---
 
@@ -207,32 +235,17 @@ python run.py
 ```
 Or simply double-click the `start.bat` script.
 
-This launches two concurrent processes:
+### Standalone Desktop Mode
 
-| Process | Role |
-|---|---|
-| **Process 1 — JarvisApp** | Starts the Eel web server, opens the dashboard in your browser, runs face authentication, then enters the voice command loop |
-| **Process 2 — HotwordDetector** | Continuously listens for the wake words "Jarvis" or "Alexa" in the background |
-
-The web dashboard opens automatically at `http://127.0.0.1:8000/index.html`.
-
-### 🖥️ Desktop Mode (Standalone Window)
-
-To run the application in a standalone windowed desktop interface using `pywebview`:
+To run in a dedicated PyWebView desktop window:
 
 ```bash
 python desktop.py
 ```
 
-### 📦 Compiling into a Standalone Executable (.exe)
+### Analytics Dashboard
 
-You can package Jarvis into a single, standalone Windows executable using PyInstaller:
-
-```bash
-pyinstaller desktop.spec
-```
-
-The compiled application will be generated in the `dist/` directory.
+To view the performance logs and API call statistics, open [`frontend/monitor.html`](frontend/monitor.html) directly in your browser or navigate to `http://localhost:8000/monitor.html` while Jarvis is running.
 
 ---
 
@@ -242,6 +255,12 @@ Once authenticated, click the **Mic** button or say the hotword to start listeni
 
 | Category | Example Commands |
 |---|---|
+| **Memory** | *"what do you remember"*, *"remember that I love playing cricket"*, *"search my memory for cricket"*, *"forget everything"* |
+| **AutoML & Data** | *"train model on dataset.csv target outcome"*, *"predict outcome with spin_rate=2000, speed=85"*, *"analyze dataset.csv"* |
+| **Spotify** | *"play Shape of You on Spotify"*, *"pause spotify"*, *"resume music"*, *"next song"*, *"what is playing"* |
+| **Emails** | *"check my email"*, *"read my latest emails"*, *"send email to John"* |
+| **Google Calendar** | *"what are my events today"*, *"schedule a meeting tomorrow at 3pm"*, *"add event: cricket practice at 5pm"* |
+| **Code & Sandbox**| *"run the code"*, *"execute python script"*, *"generate calculator code"* |
 | **Open Apps/Sites** | *"Open YouTube"*, *"Open Calculator"*, *"Open GitHub"* |
 | **YouTube** | *"Play Shape of You on YouTube"*, *"Play Believer"* |
 | **Weather** | *"Weather in Tokyo"*, *"What's the weather in London"* |
@@ -251,59 +270,71 @@ Once authenticated, click the **Mic** button or say the hotword to start listeni
 | **Screenshot** | *"Take a screenshot"* |
 | **Notes** | *"Make a note: buy groceries"*, *"Read my notes"* |
 | **Time/Date** | *"What time is it"*, *"What's today's date"* |
-| **Typing** | *"Type hello world"* |
-| **Code Gen** | *"Write a Python script for sorting"*, *"Generate a calculator program"* |
 | **Jokes** | *"Tell me a joke"* |
 | **Close App** | *"Close notepad"*, *"Close chrome"* |
-| **Web Search** | *"Search for quantum mechanics"*, *"Who is Nikola Tesla"*, *"What is photosynthesis"* |
-| **AI Chat** | Any unrecognised query is routed to Gemini |
+| **Web Search** | *"Search for quantum mechanics"*, *"Who is Nikola Tesla"* |
+| **AI Chat** | Any unrecognised query is routed to Gemini (or Ollama fallback) |
 | **Exit** | *"Stop"*, *"Shutdown"*, *"Exit"* |
+
+---
+
+## 🧪 Verification & Smoke Tests
+
+Jarvis is equipped with a comprehensive smoke testing suite located in the project root. To verify that all components are working correctly, run the following scripts inside your virtual environment:
+
+```bash
+# 1. Verify basic configuration, imports, database, and libraries
+python smoke_test.py
+
+# 2. Test the SQLite memory store and preference retrieval
+python smoke_test_memory.py
+
+# 3. Test OpenAI Whisper STT model preloading and transcribing fallbacks
+python smoke_test_audio.py
+
+# 4. Test the performance tracking database logging and error reporting
+python smoke_test_monitoring.py
+
+# 5. Test AutoML data cleansing, classifier & regressor training, and predictions
+python smoke_test_automl.py
+```
 
 ---
 
 ## ⚙️ Configuration Reference
 
-All settings are in [`backend/config.py`](backend/config.py):
+All settings are configured in [`backend/config.py`](backend/config.py):
 
 | Setting | Default | Description |
 |---|---|---|
 | `USER_NAME` | `"Syed Farhatullah"` | Full name for face recognition label |
 | `USER_CALL_NAME` | `"Farhath"` | Friendly name Jarvis uses when speaking |
-| `VOICE_INDEX` | `0` | SAPI5 fallback voice index (0 = male, 1 = female) |
-| `SPEECH_RATE` | `174` | Fallback SAPI5 speech rate (words per minute) |
 | `EDGE_TTS_VOICE` | `"en-US-GuyNeural"` | Primary Edge-TTS neural voice |
-| `EDGE_TTS_RATE` | `"+0%"` | Edge-TTS speech speed adjustment |
+| `WHISPER_ENABLED` | `True` | Master switch for local OpenAI Whisper STT |
+| `WHISPER_MODEL` | `"base"` | Model size: tiny (~39MB), base (~74MB), small (~244MB) |
+| `MEMORY_ENABLED` | `True` | Master switch for persistent conversation memory |
+| `CHROMADB_ENABLED` | `True` | Vector index for memory semantic search |
+| `MONITOR_ENABLED` | `True` | Master switch for latency and error logging |
+| `AUTOML_ENABLED` | `True` | Master switch for automated machine learning model trainer |
 | `FACE_CONFIDENCE_THRESHOLD` | `45` | LBPH distance threshold (lower = stricter matching) |
 | `FACE_CONSECUTIVE_MATCHES` | `3` | Consecutive high-confidence frames needed to confirm identity |
-| `FACE_AUTH_TIMEOUT` | `30` | Seconds before face auth gives up |
-| `FACE_AUTH_MAX_ATTEMPTS` | `5` | Failed attempts before lockout |
-| `GEMINI_API_KEY` | `""` | Google Gemini API key for chatbot & code generation |
 
 ---
 
 ## 📦 Dependencies
 
-| Package | Purpose |
-|---|---|
-| `eel` | Python ↔ JavaScript bridge for the web UI |
-| `opencv-contrib-python` | Face detection & LBPH recognition |
-| `pyttsx3` | Text-to-speech fallback (Windows SAPI5) |
-| `edge-tts` | Primary high-quality neural voice text-to-speech |
-| `python-dotenv` | Load environment variables from `.env` file |
-| `SpeechRecognition` | Microphone input → text |
-| `pyaudio` | Audio stream for speech recognition |
-| `google-genai` | Google Gemini API for AI chatbot & code gen |
-| `pyautogui` | Keyboard/mouse automation (volume, typing, WhatsApp) |
-| `pywhatkit` | YouTube playback |
-| `pygame` | Audio playback for startup and Edge-TTS playback |
-| `requests` | HTTP requests (weather API) |
-| `wikipedia` | Wikipedia search & summaries |
-| `pyjokes` | Random jokes |
-| `numpy` | Numerical operations for image processing |
-| `Pillow` | Image handling |
-| `pywebview` | Standalone app window for desktop mode |
-| `duckduckgo-search` | Live search fallback engine |
-| `pyinstaller` | Standalone Windows executable packaging |
+Major packages defined in [`requirements.txt`](requirements.txt):
+- `eel`: Python ↔ JavaScript bridge for the web UI.
+- `opencv-contrib-python`: Biometric face detection & LBPH recognition.
+- `google-genai`: Google Gemini API client for AI chatbot & context parsing.
+- `edge-tts`: Cloud-based Microsoft neural text-to-speech.
+- `openai-whisper`: Offline local speech-to-text model.
+- `scikit-learn`: Decision tree training & evaluation for AutoML.
+- `spotipy`: Spotify Web API wrapper.
+- `google-api-python-client` & `google-auth-oauthlib`: Google Calendar API.
+- `pywebview`: Native app window rendering for desktop mode.
+- `pyinstaller`: Packager for compiling script into standalone Windows `.exe`.
+- `SpeechRecognition`, `pyaudio`, `pyautogui`, `pygame`, `pywhatkit`, `requests`, `wikipedia`, `beautifulsoup4`, `duckduckgo-search`, `pyjokes`.
 
 ---
 

@@ -51,6 +51,13 @@ envJarvis_old/
 *.db-shm
 *.sqlite3
 
+# ChromaDB directory
+.chromadb/
+
+# AutoML models directory
+.models/
+
+
 # Runtime-generated files
 jarvis_notes.txt
 contacts.csv

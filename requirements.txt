@@ -19,3 +19,12 @@ beautifulsoup4
 duckduckgo-search
 pywebview
 pyinstaller
+# Phase 2 dependencies
+spotipy
+google-auth-oauthlib
+google-api-python-client
+openai-whisper
+
+# Phase 4 dependencies
+scikit-learn
+joblib

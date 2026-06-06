@@ -12,10 +12,12 @@ import datetime
 import logging
 import re
 import urllib.parse
+import time
 
 import requests
 
 from backend.config import GEMINI_API_KEY
+from backend.monitor import log_api_call, log_error
 
 logger = logging.getLogger(__name__)
 
@@ -79,18 +81,50 @@ def detect_search_intent_and_reformulate(query: str, current_time: str) -> dict:
     models_to_try = ["gemini-2.5-flash", "gemini-2.0-flash"]
     response = None
 
-    for idx, model_name in enumerate(models_to_try):
-        try:
-            response = client.models.generate_content(
-                model=model_name,
-                contents=prompt,
-            )
-            break
-        except Exception as e:
-            logger.warning("Intent detection model %s failed: %s", model_name, e)
-            if idx < len(models_to_try) - 1:
-                continue
-            raise
+    start = time.time()
+    success = False
+    used_model = None
+    last_err = None
+    try:
+        for idx, model_name in enumerate(models_to_try):
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                )
+                success = True
+                used_model = model_name
+                break
+            except Exception as e:
+                logger.warning("Intent detection model %s failed: %s", model_name, e)
+                last_err = e
+                if idx < len(models_to_try) - 1:
+                    continue
+                raise
+    except Exception as e:
+        elapsed = int((time.time() - start) * 1000)
+        log_api_call(
+            service="intent_detection",
+            model="gemini-2.5-flash",
+            latency_ms=elapsed,
+            success=False,
+            error_msg=str(e)
+        )
+        log_error("intent_detection", f"Intent detection failed: {e}", severity="warning")
+        raise
+
+    elapsed = int((time.time() - start) * 1000)
+    tokens_used = 0
+    if response and hasattr(response, 'usage_metadata') and response.usage_metadata:
+        tokens_used = getattr(response.usage_metadata, 'total_token_count', 0)
+
+    log_api_call(
+        service="intent_detection",
+        model=used_model,
+        latency_ms=elapsed,
+        tokens_used=tokens_used,
+        success=True
+    )
 
     if not response or not response.text:
         return {"search_required": True, "search_query": query, "reason": "LLM returned empty — defaulting to search."}
@@ -137,13 +171,21 @@ def google_search(query: str, num_results: int = 5) -> list[dict]:
     encoded_query = urllib.parse.quote(query)
     url = f"https://www.google.com/search?q={encoded_query}&gbv=1&num={num_results + 3}"
 
+    start = time.time()
     try:
         resp = requests.get(url, headers=_SEARCH_HEADERS, timeout=_SCRAPE_TIMEOUT)
-        if resp.status_code != 200:
+        elapsed = int((time.time() - start) * 1000)
+        if resp.status_code == 200:
+            log_api_call("google_search", latency_ms=elapsed, success=True)
+        else:
             logger.warning("Google search returned status %d", resp.status_code)
+            log_api_call("google_search", latency_ms=elapsed, success=False, error_msg=f"HTTP status {resp.status_code}")
             return []
     except Exception as e:
+        elapsed = int((time.time() - start) * 1000)
         logger.error("Google search request failed: %s", e)
+        log_api_call("google_search", latency_ms=elapsed, success=False, error_msg=str(e))
+        log_error("google_search", f"Google search request failed: {e}", severity="warning")
         return []
 
     soup = BeautifulSoup(resp.text, "html.parser")
@@ -206,12 +248,19 @@ def scrape_url(url: str) -> str:
     except ImportError:
         return ""
 
+    start = time.time()
     try:
         resp = requests.get(url, headers=_SEARCH_HEADERS, timeout=_SCRAPE_TIMEOUT)
-        if resp.status_code != 200:
+        elapsed = int((time.time() - start) * 1000)
+        if resp.status_code == 200:
+            log_api_call("web_scrape", latency_ms=elapsed, success=True)
+        else:
+            log_api_call("web_scrape", latency_ms=elapsed, success=False, error_msg=f"HTTP status {resp.status_code}")
             return ""
     except Exception as e:
+        elapsed = int((time.time() - start) * 1000)
         logger.warning("Failed to scrape %s: %s", url, e)
+        log_api_call("web_scrape", latency_ms=elapsed, success=False, error_msg=str(e))
         return ""
 
     soup = BeautifulSoup(resp.text, "html.parser")
@@ -323,24 +372,53 @@ def synthesize_response(query: str, context: str, sources: list[dict], current_t
         "Cite sources using [1], [2], etc."
     )
 
-    models_to_try = ["gemini-2.5-flash", "gemini-2.0-flash"]
-    response = None
+    start = time.time()
+    success = False
+    used_model = None
+    last_err = None
+    try:
+        for idx, model_name in enumerate(models_to_try):
+            try:
+                logger.info("Synthesis using model: %s", model_name)
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=[
+                        {"role": "user", "parts": [{"text": f"System: {system_instruction}\n\n{user_prompt}"}]}
+                    ],
+                )
+                success = True
+                used_model = model_name
+                break
+            except Exception as e:
+                logger.warning("Synthesis model %s failed: %s", model_name, e)
+                last_err = e
+                if idx < len(models_to_try) - 1:
+                    continue
+                raise
+    except Exception as e:
+        elapsed = int((time.time() - start) * 1000)
+        log_api_call(
+            service="rag_synthesis",
+            model="gemini-2.5-flash",
+            latency_ms=elapsed,
+            success=False,
+            error_msg=str(e)
+        )
+        log_error("rag_synthesis", f"RAG synthesis failed: {e}", severity="error")
+        raise
 
-    for idx, model_name in enumerate(models_to_try):
-        try:
-            logger.info("Synthesis using model: %s", model_name)
-            response = client.models.generate_content(
-                model=model_name,
-                contents=[
-                    {"role": "user", "parts": [{"text": f"System: {system_instruction}\n\n{user_prompt}"}]}
-                ],
-            )
-            break
-        except Exception as e:
-            logger.warning("Synthesis model %s failed: %s", model_name, e)
-            if idx < len(models_to_try) - 1:
-                continue
-            raise
+    elapsed = int((time.time() - start) * 1000)
+    tokens_used = 0
+    if response and hasattr(response, 'usage_metadata') and response.usage_metadata:
+        tokens_used = getattr(response.usage_metadata, 'total_token_count', 0)
+
+    log_api_call(
+        service="rag_synthesis",
+        model=used_model,
+        latency_ms=elapsed,
+        tokens_used=tokens_used,
+        success=True
+    )
 
     if not response or not response.text:
         return "I wasn't able to generate an answer from the search results."
