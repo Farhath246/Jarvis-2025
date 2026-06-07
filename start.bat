@@ -1,6 +1,7 @@
 @echo off
 title Jarvis Starter
 echo Activating envJarvis virtual environment...
+set PYTHONUTF8=1
 call "%~dp0envJarvis\Scripts\activate.bat"
 if %errorlevel% neq 0 (
     echo [ERROR] Failed to activate envJarvis virtual environment.

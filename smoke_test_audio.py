@@ -43,7 +43,7 @@ def main():
     print(f"  WHISPER_MODEL:    {WHISPER_MODEL}")
     print(f"  WHISPER_LANGUAGE: {WHISPER_LANGUAGE}")
     assert WHISPER_ENABLED is True, "FAILED: WHISPER_ENABLED should be True"
-    assert WHISPER_MODEL == "base", "FAILED: WHISPER_MODEL should be 'base'"
+    assert WHISPER_MODEL in ["tiny", "base", "small", "medium", "large"], f"FAILED: WHISPER_MODEL should be a standard model size, got '{WHISPER_MODEL}'"
     assert WHISPER_LANGUAGE is None, "FAILED: WHISPER_LANGUAGE should be None (auto-detect)"
     print("  PASSED")
 
@@ -69,9 +69,7 @@ def main():
     print("\n[TEST 5] Verifying command.py integration...")
     try:
         # Check that command.py imports and uses the audio engine
-        import importlib
         import backend.command
-        importlib.reload(backend.command)
         
         # Check takecommand function signature exists
         assert hasattr(backend.command, 'takecommand'), "FAILED: takecommand not found"

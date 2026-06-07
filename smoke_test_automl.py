@@ -119,6 +119,8 @@ def main():
             
         # ── Test 3: Train Classification Model ─────────────────────────────
         print("\n[TEST 3] Training Classification Model...")
+        import backend.automl
+        backend.automl.AUTOML_ENABLED = True
         res_class = train_and_save_model(MOCK_CSV, "test_class_model", "outcome")
         print(f"  Classification training result: {res_class}")
         assert res_class["success"], f"FAILED: Classification training failed: {res_class.get('error')}"
