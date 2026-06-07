@@ -52,6 +52,7 @@ def _get_conn():
 def list_trained_models() -> list[dict]:
     """Return all registered models from database."""
     if not AUTOML_ENABLED:
+        logger.info("AutoML is disabled on this device. Enable it in config.py")
         return []
     try:
         conn = _get_conn()
@@ -113,7 +114,7 @@ def train_and_save_model(filepath: str, model_name: str, target_col: str) -> dic
     7. Register details in SQLite table.
     """
     if not AUTOML_ENABLED:
-        return {"success": False, "error": "AutoML is disabled in configuration."}
+        return {"success": False, "error": "AutoML is disabled on this device. Enable it in config.py"}
         
     if not _check_sklearn():
         return {
@@ -294,7 +295,7 @@ def predict_with_model(model_name: str, features: dict) -> dict:
     Load saved model metadata, process inputs, and predict.
     """
     if not AUTOML_ENABLED:
-        return {"success": False, "error": "AutoML is disabled in configuration."}
+        return {"success": False, "error": "AutoML is disabled on this device. Enable it in config.py"}
         
     try:
         conn = _get_conn()

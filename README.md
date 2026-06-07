@@ -2,13 +2,14 @@
 
 # 🤖 JARVIS — AI Desktop Assistant
 
-**A voice-controlled, AI-powered desktop assistant with biometric face authentication, persistent memory, offline Whisper speech recognition, and a sleek web-based monitoring dashboard.**
+**A voice-controlled, AI-powered desktop assistant with biometric face authentication, persistent memory, offline/online speech recognition, and a sleek web-based monitoring dashboard. Optimized for both premium setups and low-resource devices.**
 
 ![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![Platform](https://img.shields.io/badge/Platform-Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)
 ![Eel](https://img.shields.io/badge/UI-Eel%20Web%20GUI-4FC08D?style=for-the-badge)
 ![OpenCV](https://img.shields.io/badge/Face%20Auth-OpenCV-5C3EE8?style=for-the-badge&logo=opencv&logoColor=white)
 ![Gemini](https://img.shields.io/badge/AI-Google%20Gemini-8E75B2?style=for-the-badge&logo=google&logoColor=white)
+![Ollama](https://img.shields.io/badge/LLM-Local%20Ollama-orange?style=for-the-badge&logo=ollama&logoColor=white)
 
 </div>
 
@@ -18,63 +19,107 @@
 
 Jarvis is a multi-process desktop assistant for Windows that combines voice recognition, biometric face authentication, and a modern browser-based UI. It uses **Eel** to bridge a Python backend with an HTML/CSS/JS frontend, delivering a seamless voice-interactive experience.
 
-The assistant runs two concurrent processes — the main application (web dashboard + face login + command dispatcher) and a background hotword listener — so it's always ready to respond when you say **"Jarvis"**.
+The assistant runs two concurrent processes:
+1. **Main Application**: Drives the Eel web server, biometric face login flow, core command dispatching, API client integrations, and machine learning pipelines.
+2. **Background Listener**: Continually monitors audio input in the background for wake-words (**"Jarvis"** or **"Alexa"**).
+
+---
+
+## ⚡ Low-End Device Optimization Mode
+
+Jarvis features built-in settings allowing it to run smoothly on low-resource hardware (e.g., **2–4 GB RAM, no dedicated GPU, or offline setups**). These features can be controlled directly via [`backend/config.py`](backend/config.py):
+
+*   **`PREFERRED_TTS = "pyttsx3"`**: Uses the offline Windows SAPI5 voice engine first instead of the cloud-based Edge-TTS, eliminating network latency and cloud dependencies.
+*   **`PREFERRED_LLM = "ollama"`**: Routes LLM chats and query syntheses through your local Ollama endpoint (e.g. `gemma2:2b`, `qwen2.5:1.5b`, `phi3:mini`, `tinyllama`). It only calls Google Gemini API as a fallback if Ollama is unreachable.
+*   **`ENABLE_CHROMA = False`**: Disables the heavier ChromaDB vector database in favor of a lightweight SQLite-based keyword-search index for persistent memory.
+*   **`ENABLE_AUTOML = False`**: Completely disables the automated ML pipeline at startup, lazy-loading heavy libraries like `pandas` and `scikit-learn` only when the AutoML train or predict command is explicitly triggered.
+*   **`CLI_MODE = True`**: Starts Jarvis in a **headless terminal REPL mode** directly in the console. It bypasses the Eel web server, biometric webcam authentication, and browser UI, allowing you to access Jarvis over SSH or on extreme low-spec systems.
+
+---
+
+## 🛠️ Dynamic Fallback Network (Graceful Degradation)
+
+Jarvis is designed for high reliability, dynamically routing calls based on network status and system configuration:
+
+```mermaid
+graph TD
+    User([User Voice Query]) --> STT{STT Engine}
+    STT -->|Whisper Enabled / Preloaded| Whisper[Offline OpenAI Whisper STT]
+    STT -->|Whisper OOM / Fail / Disable| GoogleSTT[Online Google Speech API]
+    
+    Query[Process Query] --> Route{Command Match?}
+    Route -->|Yes| Action[Run Built-in Action]
+    Route -->|No / Chatbot| LLM{Preferred LLM?}
+    
+    LLM -->|Ollama First| Ollama[Local Ollama Server]
+    Ollama -->|Fails / Down| Gemini[Google Gemini Cloud API]
+    
+    LLM -->|Gemini First| Gemini
+    Gemini -->|Rate Limit / Down| Ollama
+    
+    Action & Ollama & Gemini --> TTS{Preferred TTS?}
+    TTS -->|Edge-TTS First| Edge[Cloud Edge-TTS Neural Voice]
+    Edge -->|Network Down / Fail| SAPI[Local SAPI5 pyttsx3 fallback]
+    
+    TTS -->|pyttsx3 First| SAPI
+    SAPI -->|Fail| Edge
+```
 
 ---
 
 ## 🚀 Key Features
 
 ### 🔐 Biometric Face Authentication
-- **LBPH (Local Binary Patterns Histograms)** face recogniser via OpenCV.
-- **CLAHE** preprocessing for lighting-invariant detection.
-- **Bilateral filtering** to reduce background noise while preserving facial edges.
-- **Multi-frame voting** — requires consecutive high-confidence matches to confirm identity.
-- Automatic blur detection during dataset capture for high-quality training samples.
-- Configurable confidence threshold and frame count in `config.py`.
+*   **LBPH (Local Binary Patterns Histograms)** face recognizer via OpenCV.
+*   **CLAHE** preprocessing for lighting-invariant detection.
+*   **Bilateral filtering** to reduce background noise while preserving facial edges.
+*   **Multi-frame voting** — requires consecutive high-confidence matches to confirm identity.
+*   Automatic blur detection during dataset capture for high-quality training samples.
+*   Configurable confidence threshold and frame count in `config.py`.
 
 ### 🗣️ Voice Interaction & Offline Speech
-- **Hotword detection** — continuously listens for "Jarvis" or "Alexa" in the background.
-- **Local STT (Whisper)** — Uses **OpenAI Whisper** for high-accuracy local, offline speech-to-text.
-- **Online STT (Fallback)** — Gracefully falls back to the online Google Speech Recognition API if Whisper is not installed or enabled.
-- **Text-to-speech** — Powered primarily by **Edge-TTS** (Microsoft Edge Neural Voices) for natural, high-quality, cloud-based voice response.
-- **Offline TTS Fallback** — Automatically falls back to the local Windows **SAPI5 engine** (`pyttsx3`) if offline.
-- Text input also supported directly through the web dashboard.
+*   **Hotword detection** — continuously listens for "Jarvis" or "Alexa" in the background.
+*   **Local STT (Whisper)** — Uses **OpenAI Whisper** for high-accuracy local, offline speech-to-text.
+*   **Online STT (Fallback)** — Gracefully falls back to the online Google Speech Recognition API if Whisper is not installed or enabled.
+*   **Text-to-speech** — Powered primarily by **Edge-TTS** (Microsoft Edge Neural Voices) for natural, high-quality, cloud-based voice response.
+*   **Offline TTS Fallback** — Automatically falls back to the local Windows **SAPI5 engine** (`pyttsx3`) if offline.
+*   Text input also supported directly through the web dashboard.
 
 ### 🧠 Persistent Memory System
-- **SQLite Memory Store**: Securely stores structured conversation histories, user preferences, and learned facts.
-- **Automatic Fact Extraction**: Extracts user facts and preferences from conversation context using Gemini.
-- **ChromaDB Semantic Search (Optional)**: Performs high-performance vector search over memories (falls back to keyword-based search if ChromaDB is not installed).
+*   **SQLite Memory Store**: Securely stores structured conversation histories, user preferences, and learned facts.
+*   **Automatic Fact Extraction**: Extracts user facts and preferences from conversation context using Gemini.
+*   **ChromaDB Semantic Search (Optional)**: Performs high-performance vector search over memories (falls back to keyword-based search if ChromaDB is not installed).
 
 ### 🎵 Advanced Integrations
-- **Spotify Music Control**: Play specific tracks, pause, resume, skip, or get the currently playing song via the Spotify Web API.
-- **Email Client**: Check/read your latest Gmail/IMAP inbox messages and send emails via SMTP (supports Gmail App Passwords).
-- **Google Calendar**: View daily schedules, upcoming calendar events, and dynamically create new events using the Google Calendar API.
-- **Secure Sandbox Execution**: Run generated python scripts in an isolated subprocess sandbox with configurable timeouts.
+*   **Spotify Music Control**: Play specific tracks, pause, resume, skip, or get the currently playing song via the Spotify Web API.
+*   **Email Client**: Check/read your latest Gmail/IMAP inbox messages and send emails via SMTP (supports Gmail App Passwords).
+*   **Google Calendar**: View daily schedules, upcoming calendar events, and dynamically create new events using the Google Calendar API.
+*   **Secure Sandbox Execution**: Run generated python scripts in an isolated subprocess sandbox with configurable timeouts.
 
 ### 📊 Performance & API Monitoring
-- **Log Tracking**: Records all API call latencies, model parameters, token counts, and error details in the local SQLite database.
-- **Analytics Dashboard**: Sleek monitoring interface (`frontend/monitor.html`) displaying daily statistics, hourly activity histograms, service breakdown, and recent errors.
+*   **Log Tracking**: Records all API call latencies, model parameters, token counts, and error details in the local SQLite database.
+*   **Analytics Dashboard**: Sleek monitoring interface (`frontend/monitor.html`) displaying daily statistics, hourly activity histograms, service breakdown, and recent errors.
 
 ### 🤖 AutoML & Data Pipeline
-- **Data Ingestion**: Standardizes CSV/JSON data and automatically imputes missing values.
-- **Auto Task Detection**: Analyzes target column values to automatically detect whether a task is classification or regression.
-- **Lightweight scikit-learn training**: Trains and evaluates optimized Decision Trees with a single command.
-- **Interactive Prediction**: Make predictions using trained models directly through voice commands.
+*   **Data Ingestion**: Standardizes CSV/JSON data and automatically imputes missing values.
+*   **Auto Task Detection**: Analyzes target column values to automatically detect whether a task is classification or regression.
+*   **Lightweight scikit-learn training**: Trains and evaluates optimized Decision Trees with a single command.
+*   **Interactive Prediction**: Make predictions using trained models directly through voice commands.
 
-### 🧠 AI Chatbot (Google Gemini)
-- Falls back to **Gemini 2.5 Flash** (free tier) or local **Ollama** when no built-in command matches.
-- Supports Hinglish and multilingual query detection.
-- Configurable via API key in `.env` file.
+### 🤖 AI Chatbot (Google Gemini & Ollama)
+*   Falls back to **Gemini 2.5 Flash** (free tier) or local **Ollama** when no built-in command matches.
+*   Supports Hinglish and multilingual query detection.
+*   Configurable via API key in `.env` file.
 
 ### 🖥️ Standalone Desktop Mode
-- Runs the entire assistant in a standalone desktop window using **PyWebView**.
-- Supports packaging into a single executable (.exe) for convenient Windows distribution.
-- Avoids opening the dashboard in a default web browser.
+*   Runs the entire assistant in a standalone desktop window using **PyWebView**.
+*   Supports packaging into a single executable (.exe) for convenient Windows distribution.
+*   Avoids opening the dashboard in a default web browser.
 
 ### 🌐 Real-Time Web Search
-- Performs live web searching using the **DuckDuckGo Search** API.
-- Automatically triggered by informational voice queries ("search for...", "who is...", "what is...").
-- Returns key summary snippets directly to the text-to-speech engine.
+*   Performs live web searching using the **DuckDuckGo Search** API.
+*   Automatically triggered by informational voice queries ("search for...", "who is...", "what is...").
+*   Returns key summary snippets directly to the text-to-speech engine.
 
 ---
 
@@ -131,6 +176,7 @@ Jarvis-2025/
 ├── .models/                    # [gitignored] Saved AutoML model pkl files
 ├── .chromadb/                  # [gitignored] ChromaDB vector database files
 ├── generated_codes/            # [gitignored] AI-generated code output
+├── sandbox_runs/               # [gitignored] Isolated sandbox execution logs & files
 └── jarvis.db                   # [gitignored] Local SQLite database
 ```
 
@@ -144,7 +190,7 @@ Jarvis-2025/
 |---|---|
 | **OS** | Windows 10 / 11 (uses SAPI5 fallback and DirectShow camera) |
 | **Python** | 3.10 - 3.13 recommended |
-| **Webcam** | Required for face authentication |
+| **Webcam** | Required for face authentication (unless in `CLI_MODE`) |
 | **Microphone** | Required for voice commands & hotword detection |
 
 ### Step 1 — Clone & Install Dependencies
@@ -166,92 +212,89 @@ pip install -r requirements.txt
 
 ### Step 2 — Initialise the Database
 
-Create the SQLite tables for apps, websites, contacts, performance logs, AutoML models, and memories:
+Create the SQLite tables for performance logs, AutoML models, and memories:
 
 ```bash
 python -m backend.db
 ```
 
-### Step 3 — Capture Face Samples
+### Step 3 — Face Authentication Setup (Required for GUI mode)
 
-Sit in front of your webcam. The script captures 200 high-quality frames with horizontal flip augmentation:
+1.  **Capture Samples**: Sit in front of your webcam. The script captures 200 high-quality frames:
+    ```bash
+    python -m backend.auth.sample
+    ```
+2.  **Train the LBPH Model**: Analyze captured samples and generate the face classifier:
+    ```bash
+    python -m backend.auth.trainer
+    ```
 
-```bash
-python -m backend.auth.sample
-```
+### Step 4 — Configure Settings
 
-### Step 4 — Train the Face Model
+1.  Create your `.env` file from the template:
+    ```bash
+    copy .env.example .env
+    ```
+2.  Open [`.env`](.env) and configure the external services you want to use:
+    ```env
+    # Google Gemini API (Required for chatbot features unless using local Ollama)
+    GEMINI_API_KEY=your_gemini_api_key
 
-Analyse captured samples and generate the LBPH model:
+    # Local LLM (Ollama) configuration
+    OLLAMA_HOST=http://localhost:11434
+    OLLAMA_MODEL=qwen2.5:1.5b
 
-```bash
-python -m backend.auth.trainer
-```
+    # Spotify Web API
+    SPOTIFY_CLIENT_ID=your_spotify_client_id
+    SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
+    SPOTIFY_REDIRECT_URI=http://localhost:8888/callback
 
-### Step 5 — Configure Your Settings
+    # Email Configuration
+    EMAIL_ADDRESS=your_email@gmail.com
+    EMAIL_PASSWORD=your_gmail_app_password
 
-Edit [`backend/config.py`](backend/config.py) or set environment variables in `.env` to personalize your assistant:
-
-```bash
-copy .env.example .env
-```
-
-Open [`.env`](.env) and configure the services you want to use:
-
-```env
-# Google Gemini API (Required for chatbot features)
-GEMINI_API_KEY=your_gemini_api_key
-
-# Local LLM Fallback (Optional)
-OLLAMA_HOST=http://localhost:11434
-OLLAMA_MODEL=qwen2.5:1.5b
-
-# Spotify Web API
-SPOTIFY_CLIENT_ID=your_spotify_client_id
-SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
-SPOTIFY_REDIRECT_URI=http://localhost:8888/callback
-
-# Email Configuration
-EMAIL_ADDRESS=your_email@gmail.com
-EMAIL_PASSWORD=your_gmail_app_password
-
-# IMAP/SMTP details if not using standard Gmail
-IMAP_SERVER=imap.gmail.com
-IMAP_PORT=993
-SMTP_SERVER=smtp.gmail.com
-SMTP_PORT=587
-```
+    # IMAP/SMTP details if not using standard Gmail
+    IMAP_SERVER=imap.gmail.com
+    IMAP_PORT=993
+    SMTP_SERVER=smtp.gmail.com
+    SMTP_PORT=587
+    ```
 
 ---
 
 ## ▶️ Running Jarvis
 
-### Browser Mode (Default)
-
-To run the application in your default web browser, execute:
-
+### 1. Web GUI Mode (Default)
+To run in your default web browser (with face recognition login):
 ```bash
 python run.py
 ```
-Or simply double-click the `start.bat` script.
+*Or double-click the `start.bat` script.*
 
-### Standalone Desktop Mode
-
-To run in a dedicated PyWebView desktop window:
-
+### 2. Native Desktop Mode
+To run inside a dedicated PyWebView desktop window (no default web browser):
 ```bash
 python desktop.py
 ```
 
-### Analytics Dashboard
+### 3. Headless CLI Mode (Optimized)
+To run headless inside the terminal (bypasses browser, Eel, and face authentication):
+1. Set `CLI_MODE = True` in [`backend/config.py`](backend/config.py).
+2. Launch the app:
+   ```bash
+   python main.py
+   ```
 
-To view the performance logs and API call statistics, open [`frontend/monitor.html`](frontend/monitor.html) directly in your browser or navigate to `http://localhost:8000/monitor.html` while Jarvis is running.
+### 4. Analytics Dashboard
+To view performance logs and latency metrics:
+*   Open `frontend/monitor.html` directly in your browser, or
+*   Navigate to `http://localhost:8000/monitor.html` while Jarvis is running in GUI mode.
 
 ---
 
-## 🎙️ Voice Commands
+## 🎙️ Voice & Text Command Reference
 
-Once authenticated, click the **Mic** button or say the hotword to start listening:
+Once authenticated or in CLI mode, enter queries via speech (say the hotword / click the mic) or type them directly:
 
 | Category | Example Commands |
 |---|---|
@@ -280,22 +323,22 @@ Once authenticated, click the **Mic** button or say the hotword to start listeni
 
 ## 🧪 Verification & Smoke Tests
 
-Jarvis is equipped with a comprehensive smoke testing suite located in the project root. To verify that all components are working correctly, run the following scripts inside your virtual environment:
+Ensure all features are verified inside your virtual environment using the smoke test suite:
 
 ```bash
-# 1. Verify basic configuration, imports, database, and libraries
+# 1. Verify basic configuration, imports, database connection, and local environment
 python smoke_test.py
 
-# 2. Test the SQLite memory store and preference retrieval
+# 2. Test SQLite memory persistence and Gemini preference extraction
 python smoke_test_memory.py
 
 # 3. Test OpenAI Whisper STT model preloading and transcribing fallbacks
 python smoke_test_audio.py
 
-# 4. Test the performance tracking database logging and error reporting
+# 4. Test performance tracking log storage and latency records
 python smoke_test_monitoring.py
 
-# 5. Test AutoML data cleansing, classifier & regressor training, and predictions
+# 5. Test AutoML data cleansing, classifier & regressor training, and model predictions
 python smoke_test_automl.py
 ```
 
@@ -303,38 +346,22 @@ python smoke_test_automl.py
 
 ## ⚙️ Configuration Reference
 
-All settings are configured in [`backend/config.py`](backend/config.py):
+All core settings are defined in [`backend/config.py`](backend/config.py):
 
 | Setting | Default | Description |
 |---|---|---|
 | `USER_NAME` | `"Syed Farhatullah"` | Full name for face recognition label |
 | `USER_CALL_NAME` | `"Farhath"` | Friendly name Jarvis uses when speaking |
+| `PREFERRED_TTS` | `"pyttsx3"` | `"pyttsx3"` for offline first, `"edge"` for Edge-TTS first |
+| `PREFERRED_LLM` | `"ollama"` | `"ollama"` for local Ollama, `"gemini"` for Gemini API |
+| `ENABLE_CHROMA` | `False` | Use lightweight SQLite keyword search instead of ChromaDB |
+| `ENABLE_AUTOML` | `False` | Disable AutoML, lazy-load packages when invoked |
+| `CLI_MODE` | `False` | Run headless terminal REPL mode |
 | `EDGE_TTS_VOICE` | `"en-US-GuyNeural"` | Primary Edge-TTS neural voice |
 | `WHISPER_ENABLED` | `True` | Master switch for local OpenAI Whisper STT |
-| `WHISPER_MODEL` | `"base"` | Model size: tiny (~39MB), base (~74MB), small (~244MB) |
-| `MEMORY_ENABLED` | `True` | Master switch for persistent conversation memory |
-| `CHROMADB_ENABLED` | `True` | Vector index for memory semantic search |
-| `MONITOR_ENABLED` | `True` | Master switch for latency and error logging |
-| `AUTOML_ENABLED` | `True` | Master switch for automated machine learning model trainer |
+| `WHISPER_MODEL` | `"tiny"` | Whisper model size: `tiny`, `base`, `small`, etc. |
 | `FACE_CONFIDENCE_THRESHOLD` | `45` | LBPH distance threshold (lower = stricter matching) |
 | `FACE_CONSECUTIVE_MATCHES` | `3` | Consecutive high-confidence frames needed to confirm identity |
-
----
-
-## 📦 Dependencies
-
-Major packages defined in [`requirements.txt`](requirements.txt):
-- `eel`: Python ↔ JavaScript bridge for the web UI.
-- `opencv-contrib-python`: Biometric face detection & LBPH recognition.
-- `google-genai`: Google Gemini API client for AI chatbot & context parsing.
-- `edge-tts`: Cloud-based Microsoft neural text-to-speech.
-- `openai-whisper`: Offline local speech-to-text model.
-- `scikit-learn`: Decision tree training & evaluation for AutoML.
-- `spotipy`: Spotify Web API wrapper.
-- `google-api-python-client` & `google-auth-oauthlib`: Google Calendar API.
-- `pywebview`: Native app window rendering for desktop mode.
-- `pyinstaller`: Packager for compiling script into standalone Windows `.exe`.
-- `SpeechRecognition`, `pyaudio`, `pyautogui`, `pygame`, `pywhatkit`, `requests`, `wikipedia`, `beautifulsoup4`, `duckduckgo-search`, `pyjokes`.
 
 ---
 
@@ -356,6 +383,6 @@ This project is open source. See the repository for license details.
 
 <div align="center">
 
-**Built with ❤️ using Python, OpenCV, and Google Gemini**
+**Built with ❤️ using Python, OpenCV, Google Gemini, and Ollama**
 
 </div>

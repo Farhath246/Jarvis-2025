@@ -1,8 +1,8 @@
 """
-memory_search.py — Semantic search over Jarvis conversation history.
+memory_search.py -- Semantic search over Jarvis conversation history.
 
 Uses ChromaDB for vector-based semantic search. Falls back to SQLite
-keyword search if ChromaDB is not installed.
+keyword search if ChromaDB is not installed or ENABLE_CHROMA is False.
 
 Usage:
     from backend.memory_search import index_conversation, search_memory
@@ -17,9 +17,13 @@ Usage:
 import logging
 import sqlite3
 
-from backend.config import DB_PATH, CHROMADB_ENABLED, CHROMADB_PATH
+from backend.config import DB_PATH, CHROMADB_ENABLED, CHROMADB_PATH, ENABLE_CHROMA
 
 logger = logging.getLogger(__name__)
+
+# ── ChromaDB disabled check (logged once at import) ──────────────────────────
+if not ENABLE_CHROMA:
+    logger.info("ChromaDB disabled -- using SQLite keyword search")
 
 # ── ChromaDB client (lazy-loaded) ────────────────────────────────────────────
 _chroma_client = None
@@ -30,11 +34,12 @@ _chroma_available = False
 def _init_chromadb():
     """
     Initialise ChromaDB client and collection.
-    Returns True on success, False if ChromaDB isn't available.
+    Returns True on success, False if ChromaDB isn't available or is disabled.
     """
     global _chroma_client, _chroma_collection, _chroma_available
 
-    if not CHROMADB_ENABLED:
+    # Skip ChromaDB entirely when ENABLE_CHROMA is False (low-end mode)
+    if not ENABLE_CHROMA or not CHROMADB_ENABLED:
         return False
 
     if _chroma_client is not None:
@@ -58,7 +63,7 @@ def _init_chromadb():
 
     except ImportError:
         logger.info(
-            "ChromaDB not installed — semantic search disabled. "
+            "ChromaDB not installed -- semantic search disabled. "
             "Install with: pip install chromadb"
         )
         _chroma_available = False

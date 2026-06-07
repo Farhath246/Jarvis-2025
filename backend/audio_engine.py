@@ -62,8 +62,10 @@ def _load_model():
     """
     Load the Whisper model (lazy, thread-safe).
     The model is loaded once and kept in memory for fast inference.
+    Falls back gracefully if Whisper fails to load (OOM, missing package, etc.)
+    — callers should use Google Speech Recognition instead.
     """
-    global _whisper_model
+    global _whisper_model, _whisper_available
 
     if _whisper_model is not None:
         return _whisper_model
@@ -87,8 +89,15 @@ def _load_model():
             return _whisper_model
 
         except Exception as e:
-            logger.error("Failed to load Whisper model: %s", e)
+            # Catch OOM, missing package, CUDA errors, etc.
+            logger.warning(
+                "Failed to load Whisper model '%s': %s. "
+                "Falling back to Google Speech Recognition.",
+                WHISPER_MODEL, e,
+            )
+            _whisper_available = False   # Prevent further load attempts
             return None
+
 
 
 def preload_model() -> None:

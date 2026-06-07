@@ -2,7 +2,7 @@
 web_rag.py — Real-time Web-RAG (Retrieval-Augmented Generation) pipeline.
 
 Pipeline:
-  1. Intent Detection & Query Reformulation  (Gemini)
+  1. Intent Detection & Query Reformulation  (Gemini or local heuristic)
   2. Google Search                           (requests + scraping)
   3. Web Page Scraping & Parsing             (BeautifulSoup)
   4. Context Synthesis                       (Gemini)
@@ -16,10 +16,120 @@ import time
 
 import requests
 
-from backend.config import GEMINI_API_KEY
+from backend.config import GEMINI_API_KEY, PREFERRED_LLM, OLLAMA_HOST, OLLAMA_MODEL
 from backend.monitor import log_api_call, log_error
 
 logger = logging.getLogger(__name__)
+
+# ── Gemini models to try (in priority order) ─────────────────────────────────
+_GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+
+# ── Retry / backoff settings for Gemini 429/503 errors ───────────────────────
+_GEMINI_MAX_RETRIES = 2       # max retries per model before moving to next
+_GEMINI_BASE_DELAY  = 3       # initial backoff delay in seconds
+_GEMINI_MAX_DELAY   = 30      # cap the backoff delay
+
+
+def _gemini_generate_with_retry(client, contents, system_instruction=None):
+    """
+    Call Gemini generate_content with retry + exponential backoff for
+    transient errors (429 RESOURCE_EXHAUSTED, 503 UNAVAILABLE).
+
+    Tries each model in _GEMINI_MODELS, with up to _GEMINI_MAX_RETRIES
+    per model before falling through to the next one.
+
+    Returns:
+        (response, used_model) on success.
+    Raises:
+        The last exception if all models and retries are exhausted.
+    """
+    last_err = None
+    for model_name in _GEMINI_MODELS:
+        for attempt in range(_GEMINI_MAX_RETRIES + 1):
+            try:
+                kwargs = {"model": model_name, "contents": contents}
+                if system_instruction:
+                    kwargs["config"] = {"system_instruction": system_instruction}
+                response = client.models.generate_content(**kwargs)
+                return response, model_name
+            except Exception as e:
+                last_err = e
+                err_str = str(e)
+                is_retryable = ("429" in err_str or "503" in err_str
+                                or "RESOURCE_EXHAUSTED" in err_str
+                                or "UNAVAILABLE" in err_str)
+                if is_retryable and attempt < _GEMINI_MAX_RETRIES:
+                    delay = min(_GEMINI_BASE_DELAY * (2 ** attempt), _GEMINI_MAX_DELAY)
+                    logger.warning(
+                        "Gemini %s attempt %d failed (%s), retrying in %.1fs...",
+                        model_name, attempt + 1, type(e).__name__, delay,
+                    )
+                    time.sleep(delay)
+                    continue
+                # Not retryable or out of retries — try next model
+                logger.warning("Gemini model %s exhausted: %s", model_name, e)
+                break
+    raise last_err
+
+
+# ── Keywords that suggest a query needs a live web search ────────────────────
+_SEARCH_KEYWORDS = {
+    "news", "latest", "today", "yesterday", "current", "now",
+    "price", "stock", "score", "result", "match", "election",
+    "weather", "forecast", "update", "live", "breaking",
+    "release", "launch", "announced", "died", "born",
+    "who won", "how many", "when did", "when will", "when is",
+    "where is", "what happened",
+}
+
+# ── Phrases that clearly DON'T need search ───────────────────────────────────
+_CONVERSATIONAL_PATTERNS = [
+    r"^(hi|hello|hey|good\s+(morning|afternoon|evening|night))\b",
+    r"^how are you",
+    r"^(thank|thanks)",
+    r"^(bye|goodbye|see you)",
+    r"^(tell me a joke|joke)",
+    r"^(who are you|what is your name|what's your name)",
+    r"^(play |open |close |stop |exit |quit |type |write )",
+]
+
+
+def _local_intent_heuristic(query: str) -> dict | None:
+    """
+    Fast, offline heuristic to classify whether a query needs web search.
+    Returns an intent dict if confidently classified, or None if uncertain
+    (meaning the Gemini-based classifier should be used instead).
+    """
+    q = query.lower().strip()
+
+    # 1. Clearly conversational / command-like → no search
+    for pattern in _CONVERSATIONAL_PATTERNS:
+        if re.search(pattern, q):
+            return {
+                "search_required": False,
+                "search_query": None,
+                "reason": "Conversational query — no search needed (local heuristic).",
+            }
+
+    # 2. Contains search-worthy keywords → search
+    for kw in _SEARCH_KEYWORDS:
+        if kw in q:
+            return {
+                "search_required": True,
+                "search_query": query,
+                "reason": f"Query contains search keyword '{kw}' (local heuristic).",
+            }
+
+    # 3. Short queries (< 5 words) without search keywords → likely conversational
+    if len(q.split()) <= 4:
+        return {
+            "search_required": False,
+            "search_query": None,
+            "reason": "Short conversational query (local heuristic).",
+        }
+
+    # Uncertain — fall through to Gemini if available
+    return None
 
 # ── Constants ────────────────────────────────────────────────────────────────
 _SEARCH_HEADERS = {
@@ -41,8 +151,15 @@ _MAX_CONTEXT_CHARS = 12000   # total context limit sent to the LLM
 # ─────────────────────────────────────────────────────────────────────────────
 def detect_search_intent_and_reformulate(query: str, current_time: str) -> dict:
     """
-    Use Gemini to decide if a query needs a live web search
-    and, if so, produce an optimised search-engine query.
+    Decide if a query needs a live web search and, if so, produce an
+    optimised search-engine query.
+
+    Strategy:
+      1. Try the fast local heuristic first (no API call).
+      2. If uncertain AND PREFERRED_LLM != 'ollama', use Gemini for
+         fine-grained classification.
+      3. If Gemini is unavailable/fails, fall back to the heuristic
+         default (no search).
 
     Returns:
         {
@@ -51,10 +168,27 @@ def detect_search_intent_and_reformulate(query: str, current_time: str) -> dict:
             "reason": "brief explanation"
         }
     """
+    # ── Fast local heuristic (no API cost) ────────────────────────────────
+    heuristic_result = _local_intent_heuristic(query)
+    if heuristic_result is not None:
+        logger.info("Intent classified locally: %s", heuristic_result["reason"])
+        return heuristic_result
+
+    # When PREFERRED_LLM is ollama (low-end mode), don't burn Gemini
+    # quota on intent detection — default to no-search so the local LLM
+    # handles it directly.
+    if PREFERRED_LLM == "ollama":
+        logger.info("PREFERRED_LLM=ollama — skipping Gemini intent detection.")
+        return {
+            "search_required": False,
+            "search_query": None,
+            "reason": "Ollama-first mode — skipping cloud intent detection.",
+        }
+
+    # ── Gemini-based classification (cloud, more accurate) ────────────────
     from google import genai
 
     if not GEMINI_API_KEY:
-        # If no API key, assume search is needed and use the raw query
         return {"search_required": True, "search_query": query, "reason": "No API key — defaulting to search."}
 
     client = genai.Client(api_key=GEMINI_API_KEY)
@@ -78,29 +212,13 @@ def detect_search_intent_and_reformulate(query: str, current_time: str) -> dict:
         "REASON: <one-sentence explanation>"
     )
 
-    models_to_try = ["gemini-2.5-flash", "gemini-2.0-flash"]
     response = None
-
     start = time.time()
-    success = False
     used_model = None
-    last_err = None
     try:
-        for idx, model_name in enumerate(models_to_try):
-            try:
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=prompt,
-                )
-                success = True
-                used_model = model_name
-                break
-            except Exception as e:
-                logger.warning("Intent detection model %s failed: %s", model_name, e)
-                last_err = e
-                if idx < len(models_to_try) - 1:
-                    continue
-                raise
+        response, used_model = _gemini_generate_with_retry(
+            client, prompt
+        )
     except Exception as e:
         elapsed = int((time.time() - start) * 1000)
         log_api_call(
@@ -111,7 +229,13 @@ def detect_search_intent_and_reformulate(query: str, current_time: str) -> dict:
             error_msg=str(e)
         )
         log_error("intent_detection", f"Intent detection failed: {e}", severity="warning")
-        raise
+        # Graceful degradation: fall back to no-search so direct LLM handles it
+        logger.warning("Intent detection failed — falling back to direct LLM.")
+        return {
+            "search_required": False,
+            "search_query": None,
+            "reason": f"Gemini unavailable ({type(e).__name__}) — defaulting to direct LLM.",
+        }
 
     elapsed = int((time.time() - start) * 1000)
     tokens_used = 0
@@ -331,24 +455,20 @@ def build_rag_context(search_results: list[dict]) -> tuple[str, list[dict]]:
     return context_text, sources
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # 4. LLM CONTEXT SYNTHESIS
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 def synthesize_response(query: str, context: str, sources: list[dict], current_time: str) -> str:
     """
-    Send the user's query + scraped web context to Gemini
-    and return a comprehensive, cited answer.
+    Send the user's query + scraped web context to an LLM for synthesis.
+
+    LLM routing is controlled by PREFERRED_LLM in config.py:
+      - "ollama" -> try local Ollama first, Gemini as fallback
+      - "gemini" -> try Gemini first, Ollama as fallback (existing behavior)
     """
-    from google import genai
-
-    if not GEMINI_API_KEY:
-        return "Gemini API key is not configured."
-
-    client = genai.Client(api_key=GEMINI_API_KEY)
-
     # Build a source reference block for the prompt
     source_refs = "\n".join(
-        f"[{i + 1}] {s['title']} — {s['url']}" for i, s in enumerate(sources)
+        f"[{i + 1}] {s['title']} -- {s['url']}" for i, s in enumerate(sources)
     )
 
     system_instruction = (
@@ -372,58 +492,98 @@ def synthesize_response(query: str, context: str, sources: list[dict], current_t
         "Cite sources using [1], [2], etc."
     )
 
+    # -- LLM routing based on PREFERRED_LLM --
+    if PREFERRED_LLM == "ollama":
+        # Low-end mode: try local Ollama first, Gemini as fallback
+        result = _synthesize_ollama(system_instruction, user_prompt)
+        if result:
+            return result
+        logger.info("Ollama synthesis failed, falling back to Gemini...")
+        return _synthesize_gemini(system_instruction, user_prompt)
+    else:
+        # Full-featured mode: try Gemini first, Ollama as fallback
+        result = _synthesize_gemini(system_instruction, user_prompt)
+        if result:
+            return result
+        logger.info("Gemini synthesis failed, falling back to Ollama...")
+        result = _synthesize_ollama(system_instruction, user_prompt)
+        if result:
+            return result
+        raise Exception("Both Gemini and Ollama synthesis failed.")
+
+
+def _synthesize_ollama(system_instruction: str, user_prompt: str) -> str | None:
+    """
+    Synthesize a response using the local Ollama endpoint.
+    Returns the response text on success, None on failure.
+    """
     start = time.time()
-    success = False
-    used_model = None
-    last_err = None
     try:
-        for idx, model_name in enumerate(models_to_try):
-            try:
-                logger.info("Synthesis using model: %s", model_name)
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=[
-                        {"role": "user", "parts": [{"text": f"System: {system_instruction}\n\n{user_prompt}"}]}
-                    ],
-                )
-                success = True
-                used_model = model_name
-                break
-            except Exception as e:
-                logger.warning("Synthesis model %s failed: %s", model_name, e)
-                last_err = e
-                if idx < len(models_to_try) - 1:
-                    continue
-                raise
+        payload = {
+            "model": OLLAMA_MODEL,
+            "prompt": f"System: {system_instruction}\n\n{user_prompt}",
+            "stream": False
+        }
+        response = requests.post(f"{OLLAMA_HOST}/api/generate", json=payload, timeout=30)
+        elapsed = int((time.time() - start) * 1000)
+
+        if response.status_code == 200:
+            result = response.json().get("response", "").strip()
+            if result:
+                log_api_call("rag_synthesis_ollama", OLLAMA_MODEL, latency_ms=elapsed, success=True)
+                return result
+
+        log_api_call("rag_synthesis_ollama", OLLAMA_MODEL, latency_ms=elapsed, success=False,
+                     error_msg=f"HTTP {response.status_code}")
+        return None
+
     except Exception as e:
         elapsed = int((time.time() - start) * 1000)
+        logger.warning("Ollama RAG synthesis failed: %s", e)
+        log_api_call("rag_synthesis_ollama", OLLAMA_MODEL, latency_ms=elapsed, success=False, error_msg=str(e))
+        return None
+
+
+def _synthesize_gemini(system_instruction: str, user_prompt: str) -> str | None:
+    """
+    Synthesize a response using Google Gemini API.
+    Returns the response text on success, None on failure.
+    """
+    if not GEMINI_API_KEY:
+        logger.warning("Gemini API key not configured for RAG synthesis.")
+        return None
+
+    from google import genai
+    client = genai.Client(api_key=GEMINI_API_KEY)
+
+    start = time.time()
+    used_model = None
+    try:
+        contents = [
+            {"role": "user", "parts": [{"text": f"System: {system_instruction}\n\n{user_prompt}"}]}
+        ]
+        response, used_model = _gemini_generate_with_retry(client, contents)
+
+        elapsed = int((time.time() - start) * 1000)
+        tokens_used = 0
+        if response and hasattr(response, 'usage_metadata') and response.usage_metadata:
+            tokens_used = getattr(response.usage_metadata, 'total_token_count', 0)
+
         log_api_call(
-            service="rag_synthesis",
-            model="gemini-2.5-flash",
-            latency_ms=elapsed,
-            success=False,
-            error_msg=str(e)
+            service="rag_synthesis", model=used_model,
+            latency_ms=elapsed, tokens_used=tokens_used, success=True,
         )
-        log_error("rag_synthesis", f"RAG synthesis failed: {e}", severity="error")
-        raise
 
-    elapsed = int((time.time() - start) * 1000)
-    tokens_used = 0
-    if response and hasattr(response, 'usage_metadata') and response.usage_metadata:
-        tokens_used = getattr(response.usage_metadata, 'total_token_count', 0)
+        if not response or not response.text:
+            return None
 
-    log_api_call(
-        service="rag_synthesis",
-        model=used_model,
-        latency_ms=elapsed,
-        tokens_used=tokens_used,
-        success=True
-    )
+        return response.text.strip()
 
-    if not response or not response.text:
-        return "I wasn't able to generate an answer from the search results."
-
-    return response.text.strip()
+    except Exception as e:
+        elapsed = int((time.time() - start) * 1000)
+        log_api_call("rag_synthesis", "gemini-2.5-flash", latency_ms=elapsed, success=False, error_msg=str(e))
+        log_error("rag_synthesis", f"Gemini RAG synthesis failed: {e}", severity="error")
+        return None
 
 
 # ─────────────────────────────────────────────────────────────────────────────

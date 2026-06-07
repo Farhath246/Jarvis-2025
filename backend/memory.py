@@ -403,10 +403,8 @@ def extract_and_save_facts(user_msg: str, jarvis_msg: str) -> None:
                 "Extracted facts:"
             )
 
-            response = client.models.generate_content(
-                model="gemini-2.0-flash",
-                contents=prompt,
-            )
+            from backend.web_rag import _gemini_generate_with_retry
+            response, _ = _gemini_generate_with_retry(client, prompt)
 
             if not response or not response.text:
                 return

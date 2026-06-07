@@ -8,12 +8,30 @@ import os
 import threading
 import time
 import speech_recognition as sr
-import eel
 
 from backend.config import (
     ASSISTANT_NAME, VOICE_INDEX, SPEECH_RATE,
     EDGE_TTS_VOICE, EDGE_TTS_RATE, TTS_TEMP_DIR,
+    PREFERRED_TTS, CLI_MODE,
 )
+
+# ── Conditional eel import (CLI_MODE uses a no-op mock) ──────────────────────
+if CLI_MODE:
+    # In headless CLI mode, replace eel with a simple mock so all
+    # eel.XYZ() calls silently do nothing instead of crashing.
+    import types
+    eel = types.ModuleType("eel")
+    # Make any attribute access return a no-op callable
+    class _EelMock:
+        def __getattr__(self, name):
+            def _noop(*args, **kwargs):
+                return lambda *a, **kw: None
+            return _noop
+        def expose(self, func):
+            return func
+    eel = _EelMock()
+else:
+    import eel
 
 # ── Logging ──────────────────────────────────────────────────────────────────────
 logger = logging.getLogger(__name__)
@@ -148,31 +166,49 @@ def speak(text: str, sources: list = None) -> None:
     """
     Convert text to speech and display it in the UI.
 
-    Primary:  Edge-TTS (Microsoft neural voices — natural, cloud-based).
-    Fallback: pyttsx3 SAPI5 (offline, robotic — used when internet is down).
+    TTS priority is controlled by PREFERRED_TTS in config.py:
+      - "pyttsx3" → pyttsx3 first, Edge-TTS fallback  (low-end / offline)
+      - "edge"    → Edge-TTS first, pyttsx3 fallback  (full-featured)
     """
     text = str(text)
     logger.info("Jarvis says: %s", text)
 
-    try:
-        eel.DisplayMessage(text)
-    except Exception as e:
-        logger.warning("eel.DisplayMessage failed: %s", e)
+    # ── Display in UI (or print in CLI mode) ──────────────────────────────
+    if CLI_MODE:
+        print(f"[Jarvis] {text}")
+    else:
+        try:
+            eel.DisplayMessage(text)
+        except Exception as e:
+            logger.warning("eel.DisplayMessage failed: %s", e)
 
     with _speak_lock:
         cleaned_text = clean_speech_text(text)
         if not cleaned_text:
             logger.info("Nothing to speak after cleaning text.")
         else:
-            # Try Edge-TTS first; fall back to pyttsx3 on failure
-            if not _speak_edge_tts(cleaned_text):
-                logger.info("Using pyttsx3 (SAPI5) fallback for speech.")
-                _speak_pyttsx3(cleaned_text)
+            # ── TTS routing based on PREFERRED_TTS ────────────────────────
+            if PREFERRED_TTS == "pyttsx3":
+                # Low-end mode: lightweight offline TTS first
+                try:
+                    _speak_pyttsx3(cleaned_text)
+                except Exception:
+                    logger.info("pyttsx3 failed — falling back to Edge-TTS.")
+                    if not _speak_edge_tts(cleaned_text):
+                        logger.warning("Both TTS engines failed.")
+            else:
+                # Full-featured mode: Edge-TTS first (existing behavior)
+                if not _speak_edge_tts(cleaned_text):
+                    logger.info("Using pyttsx3 (SAPI5) fallback for speech.")
+                    _speak_pyttsx3(cleaned_text)
 
-    try:
-        eel.receiverText(text, sources)
-    except Exception as e:
-        logger.warning("eel.receiverText failed: %s", e)
+    if CLI_MODE:
+        pass  # Already printed above
+    else:
+        try:
+            eel.receiverText(text, sources)
+        except Exception as e:
+            logger.warning("eel.receiverText failed: %s", e)
 
 
 def takecommand() -> str | None:

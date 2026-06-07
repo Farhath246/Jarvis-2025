@@ -14,6 +14,19 @@ import speech_recognition as sr
 import threading
 
 import eel
+
+from backend.config import CLI_MODE
+
+# In CLI_MODE, replace eel with a no-op mock (same pattern as command.py)
+if CLI_MODE:
+    class _EelMock:
+        def __getattr__(self, name):
+            def _noop(*args, **kwargs):
+                return lambda *a, **kw: None
+            return _noop
+        def expose(self, func):
+            return func
+    eel = _EelMock()
 import pyautogui
 import pygame
 import pywhatkit as kit
@@ -23,7 +36,7 @@ from backend.command import speak
 from backend.config import (
     ASSISTANT_NAME, USER_CALL_NAME,
     SOUND_FILE, DB_PATH, NOTES_FILE,
-    GEMINI_API_KEY
+    GEMINI_API_KEY, PREFERRED_LLM,
 )
 from backend.helper import extract_yt_term, remove_words
 from backend.monitor import log_api_call, log_error
@@ -808,10 +821,14 @@ def web_search(query: str) -> str:
 def chatBot(query: str) -> str:
     """
     Smart search assistant using a Web-RAG pipeline:
-    1. Intent Detection & Query Reformulation  (Gemini)
+    1. Intent Detection & Query Reformulation  (LLM)
     2. Google Search + Deep Web Scraping       (requests + BeautifulSoup)
-    3. LLM Context Synthesis with citations    (Gemini)
-    Falls back to direct Gemini generation for non-search queries.
+    3. LLM Context Synthesis with citations    (LLM)
+    Falls back to direct LLM generation for non-search queries.
+
+    LLM routing is controlled by PREFERRED_LLM in config.py:
+      - "ollama" -> try local Ollama first, Gemini as fallback  (low-end)
+      - "gemini" -> try Gemini first, Ollama as fallback       (full-featured)
 
     Memory-aware: includes recent conversation history, user preferences,
     and learned facts in the LLM prompt for persistent context.
@@ -819,7 +836,7 @@ def chatBot(query: str) -> str:
     try:
         from backend.web_rag import run_rag_pipeline
 
-        # Live status callback — updates the HUD + siri-text in the UI
+        # Live status callback -- updates the HUD + siri-text in the UI
         def _rag_status(emoji: str, message: str):
             display_msg = f"{emoji} {message}"
             try:
@@ -831,31 +848,21 @@ def chatBot(query: str) -> str:
             except Exception:
                 pass
 
-        # ── Run the RAG pipeline ──────────────────────────────────────────
+        # -- Run the RAG pipeline --
         logger.info("Running Web-RAG pipeline for query: %s", query)
         rag_answer, rag_sources = run_rag_pipeline(query, status_callback=_rag_status)
 
         if rag_answer is not None:
             logger.info("RAG pipeline succeeded with %d sources.", len(rag_sources or []))
             speak(rag_answer, rag_sources)
-
-            # ── Save to memory ────────────────────────────────────────────
             _save_to_memory(query, rag_answer)
-
             return rag_answer
 
-        # ── Fallback: Direct Gemini (no search needed) ────────────────────
-        logger.info("No search required. Using direct Gemini generation...")
-        from google import genai
-
-        if not GEMINI_API_KEY:
-            speak("The chatbot is not configured yet. Please add your Gemini API key to config dot py.")
-            return ""
-
-        client = genai.Client(api_key=GEMINI_API_KEY)
+        # -- No search required -- use direct LLM generation --
+        logger.info("No search required. Using direct LLM (PREFERRED_LLM=%s)...", PREFERRED_LLM)
         current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        # ── Build memory-enriched system prompt ───────────────────────────
+        # -- Build memory-enriched system prompt --
         system_instruction = (
             "You are Jarvis, an AI desktop assistant. "
             f"The current date and time is {current_time}. "
@@ -866,115 +873,138 @@ def chatBot(query: str) -> str:
             "Otherwise, respond in the language of the query or English. Keep your responses short and concise."
         )
 
-        # Inject memory context if available
         memory_context = _build_memory_prompt()
         if memory_context:
             system_instruction += "\n\n" + memory_context
+
+        # -- LLM routing based on PREFERRED_LLM --
+        if PREFERRED_LLM == "ollama":
+            # Low-end mode: try local Ollama first, Gemini as fallback
+            result = _try_ollama(query, system_instruction)
+            if result:
+                _save_to_memory(query, result)
+                return result
+            logger.info("Ollama unavailable, falling back to Gemini...")
+            result = _try_gemini(query, system_instruction)
+            if result:
+                _save_to_memory(query, result)
+                return result
+        else:
+            # Full-featured mode: try Gemini first, Ollama as fallback
+            result = _try_gemini(query, system_instruction)
+            if result:
+                _save_to_memory(query, result)
+                return result
+            logger.info("Gemini failed, falling back to Ollama...")
+            result = _try_ollama(query, system_instruction)
+            if result:
+                _save_to_memory(query, result)
+                return result
+
+        # Both LLMs failed
+        speak("I had trouble connecting to the chatbot.")
+        return ""
+
+    except Exception as e:
+        logger.error("chatBot() error: %s", e)
+        speak("Sorry, something went wrong with the chatbot.")
+        return ""
+
+
+def _try_ollama(query: str, system_instruction: str) -> str | None:
+    """
+    Attempt to generate a response using local Ollama.
+    Returns the response text on success, None on failure.
+    """
+    from backend.config import OLLAMA_HOST, OLLAMA_MODEL
+    start = time.time()
+    try:
+        try:
+            eel.DisplayMessage("🦙 Thinking (Local LLM)...")
+        except Exception:
+            pass
+
+        # Quick health check first
+        try:
+            requests.get(f"{OLLAMA_HOST}/api/tags", timeout=2)
+        except requests.exceptions.RequestException as e:
+            raise Exception(f"Ollama server unreachable: {e}")
+
+        payload = {
+            "model": OLLAMA_MODEL,
+            "prompt": f"System: {system_instruction}\n\nUser: {query}\n\nJarvis:",
+            "stream": False
+        }
+        response = requests.post(f"{OLLAMA_HOST}/api/generate", json=payload, timeout=30)
+        elapsed = int((time.time() - start) * 1000)
+
+        if response.status_code == 200:
+            result = response.json().get("response", "").strip()
+            if result:
+                logger.info("Ollama response: %s", result)
+                log_api_call("ollama", OLLAMA_MODEL, latency_ms=elapsed, success=True)
+                speak(result)
+                return result
+
+        raise Exception(f"Ollama returned status {response.status_code}")
+
+    except Exception as e:
+        elapsed = int((time.time() - start) * 1000)
+        logger.warning("Ollama call failed: %s", e)
+        log_api_call("ollama", OLLAMA_MODEL, latency_ms=elapsed, success=False, error_msg=str(e))
+        return None
+
+
+def _try_gemini(query: str, system_instruction: str) -> str | None:
+    """
+    Attempt to generate a response using Google Gemini API.
+    Returns the response text on success, None on failure.
+    """
+    if not GEMINI_API_KEY:
+        logger.warning("Gemini API key not configured.")
+        return None
+
+    start = time.time()
+    try:
+        from google import genai
+        client = genai.Client(api_key=GEMINI_API_KEY)
 
         try:
             eel.DisplayMessage("💡 Thinking...")
         except Exception:
             pass
 
-        response = None
-        models_to_try = ["gemini-2.5-flash", "gemini-2.0-flash"]
+        from backend.web_rag import _gemini_generate_with_retry
+        
+        contents = [
+            {"role": "user", "parts": [{"text": f"System: {system_instruction}\n\n{query}"}]}
+        ]
+        response, used_model = _gemini_generate_with_retry(client, contents)
 
-        start_time = time.time()
-        success = False
-        last_error = None
-        used_model = None
-
-        for idx, model_name in enumerate(models_to_try):
-            try:
-                logger.info("Direct Gemini — trying model: %s", model_name)
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=[
-                        {"role": "user", "parts": [{"text": f"System: {system_instruction}\n\n{query}"}]}
-                    ],
-                )
-                success = True
-                used_model = model_name
-                break
-            except Exception as api_err:
-                logger.warning("Model %s failed: %s", model_name, api_err)
-                last_error = api_err
-                if idx < len(models_to_try) - 1:
-                    continue
-                else:
-                    raise api_err
-
-        elapsed_ms = int((time.time() - start_time) * 1000)
+        elapsed = int((time.time() - start) * 1000)
         tokens_used = 0
         if response and hasattr(response, 'usage_metadata') and response.usage_metadata:
             tokens_used = getattr(response.usage_metadata, 'total_token_count', 0)
 
         log_api_call(
-            service="gemini",
-            model=used_model or "gemini-2.5-flash",
-            latency_ms=elapsed_ms,
-            tokens_used=tokens_used,
-            success=success,
-            error_msg=str(last_error) if last_error else None
+            service="gemini", model=used_model or "gemini-2.5-flash",
+            latency_ms=elapsed, tokens_used=tokens_used, success=True,
         )
 
         if not response or not response.text:
             raise Exception("No response received from Gemini API.")
 
         result = response.text.strip()
-        logger.info("Direct Gemini response: %s", result)
+        logger.info("Gemini response: %s", result)
         speak(result)
-
-        # ── Save to memory ────────────────────────────────────────────────
-        _save_to_memory(query, result)
-
         return result
 
     except Exception as e:
-        logger.error("chatBot() error: %s", e)
-        log_error("chatBot", f"Gemini direct call failed: {e}", severity="warning")
-        
-        # ── Ollama Local Fallback ───────────────────────────────────────────
-        start_ollama = time.time()
-        try:
-            logger.info("Gemini failed. Attempting local Ollama fallback...")
-            from backend.config import OLLAMA_HOST, OLLAMA_MODEL
-            
-            try:
-                eel.DisplayMessage("🦙 Thinking (Local LLM)...")
-            except Exception:
-                pass
-                
-            payload = {
-                "model": OLLAMA_MODEL,
-                "prompt": f"System: {system_instruction}\n\nUser: {query}\n\nJarvis:",
-                "stream": False
-            }
-            # Set a 15-second timeout to prevent hanging if Ollama is not running
-            response = requests.post(f"{OLLAMA_HOST}/api/generate", json=payload, timeout=15)
-            elapsed_ollama = int((time.time() - start_ollama) * 1000)
-            
-            if response.status_code == 200:
-                result = response.json().get("response", "").strip()
-                if result:
-                    logger.info("Ollama fallback response: %s", result)
-                    log_api_call("ollama", OLLAMA_MODEL, latency_ms=elapsed_ollama, success=True)
-                    speak(result)
-                    return result
-            
-            raise Exception(f"Ollama returned status code {response.status_code}")
-            
-        except Exception as ollama_err:
-            elapsed_ollama = int((time.time() - start_ollama) * 1000)
-            logger.error("Ollama fallback failed: %s", ollama_err)
-            log_api_call("ollama", OLLAMA_MODEL, latency_ms=elapsed_ollama, success=False, error_msg=str(ollama_err))
-            log_error("chatBot", f"Ollama fallback failed: {ollama_err}", severity="error")
-            err_msg = str(e).lower()
-            if "429" in err_msg or "resource_exhausted" in err_msg or "quota" in err_msg:
-                speak("I have exceeded the Gemini API free tier rate limit. Please start your local Ollama server to use offline fallback.")
-            else:
-                speak("I had trouble connecting to the chatbot.")
-            return ""
+        elapsed = int((time.time() - start) * 1000)
+        logger.warning("Gemini call failed: %s", e)
+        log_api_call("gemini", "gemini-2.5-flash", latency_ms=elapsed, success=False, error_msg=str(e))
+        log_error("chatBot", f"Gemini call failed: {e}", severity="warning")
+        return None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1935,7 +1965,7 @@ def run_sandboxed_code(query: str) -> None:
         # Save output to log file
         log_path = os.path.join(sandbox_run_dir, "output.log")
         with open(log_path, "w", encoding="utf-8") as log_file:
-            log_file.write(f"=== STDOUT ===\n{stdout}\n\n=== STDERR ===\n{stderr}\n")
+            log_file.write(f"=== STDOUT ===\n{result.stdout}\n\n=== STDERR ===\n{result.stderr}\n")
             log_file.write(f"\nReturn code: {result.returncode}\n")
 
     except subprocess.TimeoutExpired:
@@ -1951,6 +1981,7 @@ def run_sandboxed_code(query: str) -> None:
 
 def _find_csv_or_json_file(filename_query: str = "") -> str | None:
     """Helper to locate a CSV or JSON file in the root directory."""
+    from backend.config import BASE_DIR
     # 1. Search for matching files in query
     root_files = os.listdir(BASE_DIR)
     

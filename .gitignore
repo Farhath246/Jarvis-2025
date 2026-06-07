@@ -68,6 +68,9 @@ contacts.csv
 # AI-generated code output
 generated_codes/
 
+# Secure sandbox runs
+sandbox_runs/
+
 # ─── Secrets & Credentials ──────────────────────────────────────────────────
 # API keys, cookies, auth tokens — NEVER commit these
 backend/cookie.json

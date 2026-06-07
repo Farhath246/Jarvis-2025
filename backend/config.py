@@ -33,6 +33,17 @@ ASSISTANT_NAME = "jarvis"
 USER_NAME = "Syed Farhatullah"   # full name, used in face recognition label
 USER_CALL_NAME = "Farhath"       # friendly name Jarvis uses when speaking
 
+# ── Low-End Device Optimization Flags ─────────────────────────────────
+# These flags let Jarvis run on machines with 2-4 GB RAM, no GPU.
+# Set them to their "full-featured" values on capable hardware.
+
+PREFERRED_TTS = "pyttsx3"        # "pyttsx3" = offline first (low-end), "edge" = Edge-TTS first (default)
+PREFERRED_LLM = "ollama"         # "ollama" = local LLM first (low-end), "gemini" = cloud Gemini first
+                                 # Suggested Ollama models: gemma2:2b, phi3:mini, tinyllama
+ENABLE_CHROMA = False            # False = use lightweight SQLite keyword search instead of ChromaDB
+ENABLE_AUTOML = False            # False = disable AutoML, lazy-load sklearn/pandas only when invoked
+CLI_MODE = False                 # True = headless terminal mode (no Eel GUI, no face auth)
+
 # TTS voice settings — pyttsx3 / SAPI5 (offline fallback)
 VOICE_INDEX = 0       # preferred SAPI5 voice index — system has 2 voices (0 & 1)
 SPEECH_RATE = 174     # words per minute
@@ -116,17 +127,17 @@ MEMORY_ENABLED = True                # Master switch for the memory system
 MEMORY_MAX_CONTEXT = 5               # Recent conversations to include in LLM prompts
 MEMORY_RETENTION_DAYS = 90           # Auto-delete conversations older than this (0 = keep forever)
 MEMORY_FACT_EXTRACTION = True        # Auto-extract user facts from conversations via Gemini
-CHROMADB_ENABLED = True              # Semantic search over past conversations
+CHROMADB_ENABLED = ENABLE_CHROMA     # Controlled by ENABLE_CHROMA flag above
 CHROMADB_PATH = os.path.join(EXE_DIR, ".chromadb")
 
 # ── Offline Audio / Whisper (Phase 2) ────────────────────────────────
 WHISPER_ENABLED = True               # Master switch for Whisper offline STT
-WHISPER_MODEL = "base"               # Model size: tiny (~39MB), base (~74MB), small (~244MB)
+WHISPER_MODEL = "tiny"               # Model size: tiny (~39MB, low-end), base (~74MB), small (~244MB)
 WHISPER_LANGUAGE = None              # None = auto-detect, "en" = English only, "hi" = Hindi, "te" = Telugu
 
 # ── Performance Monitoring (Phase 3) ─────────────────────────────────
 MONITOR_ENABLED = True               # Master switch for API & performance logging
 
 # ── AutoML / Machine Learning (Phase 4) ──────────────────────────────
-AUTOML_ENABLED = True
+AUTOML_ENABLED = ENABLE_AUTOML       # Controlled by ENABLE_AUTOML flag above
 AUTOML_MODELS_DIR = os.path.join(EXE_DIR, ".models")
