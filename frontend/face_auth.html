@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Jarvis — Face Authentication</title>
+  <link rel="shortcut icon" href="/assets/img/logo.ico" type="image/x-icon">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    body {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background-color: var(--bg-primary);
+    }
+    .face-auth-card {
+      background-color: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 40px;
+      width: 100%;
+      max-width: 500px;
+      box-shadow: 0 8px 32px rgba(255,255,255,0.02);
+      text-align: center;
+    }
+    .face-auth-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 24px;
+      letter-spacing: 1px;
+    }
+    .back-btn {
+      background-color: transparent;
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 8px 16px;
+      margin-top: 24px;
+      cursor: pointer;
+      transition: all var(--transition);
+      font-size: 0.9rem;
+    }
+    .back-btn:hover {
+      color: var(--text-primary);
+      border-color: var(--text-primary);
+      background-color: var(--bg-primary);
+    }
+    #faceError {
+      color: #ff5555;
+      font-size: 0.9rem;
+      margin-top: 16px;
+      min-height: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="face-auth-card">
+    <div class="face-auth-title"><i class="bi bi-person-bounding-box"></i> FACE VERIFICATION</div>
+
+    <div id="FaceAuth" class="face-auth-inline">
+      <div id="face-preview-container">
+        <img id="face-preview" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Camera preview">
+        <div id="face-guide">
+          <div id="face-oval"></div>
+          <span id="face-guide-text">Starting camera...</span>
+        </div>
+        <div id="face-status-bar">
+          <span id="face-timer"></span>
+          <span id="face-confidence"></span>
+        </div>
+      </div>
+    </div>
+
+    <div id="faceError"></div>
+
+    <button type="button" id="retryBtn" class="back-btn" hidden><i class="bi bi-arrow-clockwise"></i> Retry</button>
+    <button type="button" onclick="window.location.href='auth.html'" class="back-btn"><i class="bi bi-arrow-left"></i> Cancel</button>
+  </div>
+
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="/eel.js"></script>
+  <script src="face_auth.js"></script>
+</body>
+</html>

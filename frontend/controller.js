@@ -51,36 +51,29 @@ $(document).ready(function () {
       .replace(/"/g, '&quot;');
   }
 
+  function appendSystemMessage(msg) {
+    var time = currentTime();
+    var html = '<div class="d-flex justify-content-center mb-2">'
+      + '<div style="font-size: 0.8rem; color: var(--text-muted); background: var(--bg-secondary); padding: 4px 12px; border-radius: 12px;">'
+      + escapeHtml(msg) + ' &middot; ' + time
+      + '</div></div>';
+    appendMessage(html);
+  }
+
   // ── eel-exposed: Display Jarvis speech ───────────────────────────────────
   eel.expose(DisplayMessage);
   function DisplayMessage(message) {
     console.log('DisplayMessage:', message);
-
-    // Update the wish/status message — works with OR without textillate
     var wishEl = document.getElementById('WishMessage');
     if (wishEl) {
       wishEl.textContent = message;
     }
-
-    // Also try the textillate-powered version if li elements exist
-    var liEl = $('.siri-message li:first');
-    if (liEl.length) {
-      liEl.text(message);
-      try { $('.siri-message').textillate('start'); } catch(e) {}
-    }
-
-    // Also update siri-text in SiriWave section
-    var siriText = document.getElementById('siri-text');
-    if (siriText) siriText.textContent = message;
-
     showTyping();
   }
 
-  // ── eel-exposed: Show main hood (blob) after command finishes ─────────────
+  // ── eel-exposed: Reset state after command ───────────────────────────────
   eel.expose(ShowHood);
   function ShowHood() {
-    $('#Oval').removeAttr('hidden').show();
-    $('#SiriWave').attr('hidden', true).hide();
     hideTyping();
     setStatus('', 'Ready');
     $('#MicBtn').removeClass('listening');
@@ -92,7 +85,7 @@ $(document).ready(function () {
     if (!message || !message.trim()) return;
     hideTyping();
     var time = currentTime();
-    var html = '<div class="row justify-content-end mb-2 animate__animated animate__fadeInRight">'
+    var html = '<div class="d-flex justify-content-end mb-2">'
       + '<div class="width-size">'
       + '<div class="sender_message">' + escapeHtml(message) + '</div>'
       + '<div class="msg-timestamp text-end">' + time + '</div>'
@@ -103,21 +96,12 @@ $(document).ready(function () {
   }
 
   function formatMessage(message) {
-    // 1. Escape HTML to prevent XSS
     let escaped = escapeHtml(message);
-    
-    // 2. Parse bold formatting **text** -> <strong>text</strong>
     escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-    
-    // 3. Parse inline code `code` -> <code>code</code>
     escaped = escaped.replace(/`(.*?)`/g, '<code>$1</code>');
-
-    // 4. Parse markdown links [text](url) -> <a href="url" target="_blank" class="chat-source-link">text</a>
     escaped = escaped.replace(/\[(.*?)\]\((https?:\/\/.*?)\)/g, function(match, text, url) {
       return '<a href="' + url + '" target="_blank" class="chat-source-link">' + text + '</a>';
     });
-
-    // 5. Replace newlines with <br/>
     return escaped.replace(/\n/g, '<br/>');
   }
 
@@ -127,23 +111,17 @@ $(document).ready(function () {
     if (!message || !message.trim()) return;
     hideTyping();
     var time = currentTime();
-    
     var formattedMessage = formatMessage(message);
 
-    var html = '<div class="row justify-content-start mb-2 animate__animated animate__fadeInLeft">'
+    var html = '<div class="d-flex justify-content-start mb-2">'
       + '<div class="width-size">'
       + '<div class="receiver_message">' + formattedMessage;
 
-    // Append sources if present
     if (sources && sources.length > 0) {
       html += '<div class="sources-container">';
       sources.forEach(function (src) {
         var domain = '';
-        try {
-          domain = new URL(src.url).hostname.replace('www.', '');
-        } catch(e) {
-          domain = 'Link';
-        }
+        try { domain = new URL(src.url).hostname.replace('www.', ''); } catch(e) { domain = 'Link'; }
         html += '<a href="' + src.url + '" target="_blank" class="source-chip" title="' + escapeHtml(src.title) + '">'
           + '<i class="bi bi-globe"></i> ' + escapeHtml(src.title || domain)
           + '</a>';
@@ -157,125 +135,18 @@ $(document).ready(function () {
     appendMessage(html);
   }
 
-  // ── eel-exposed: Live Face Preview ─────────────────────────────────────────
-  eel.expose(updateFacePreview);
-  function updateFacePreview(base64Image) {
-    var img = document.getElementById('face-preview');
-    if (img) {
-      img.src = 'data:image/jpeg;base64,' + base64Image;
-    }
-  }
-
-  eel.expose(updateFaceStatus);
-  function updateFaceStatus(timeLeft, attempts, maxAttempts) {
-    var timerEl = document.getElementById('face-timer');
-    var confEl = document.getElementById('face-confidence');
-    if (timerEl) timerEl.textContent = 'Timeout: ' + timeLeft + 's';
-    if (confEl && (!confEl.textContent.includes('match'))) {
-      confEl.textContent = 'Attempts: ' + attempts + '/' + maxAttempts;
-    }
-  }
-
-  eel.expose(showFaceDetected);
-  function showFaceDetected(confidence) {
-    var oval = document.getElementById('face-oval');
-    var confEl = document.getElementById('face-confidence');
-    var textEl = document.getElementById('face-guide-text');
-    if (oval) { oval.classList.remove('failed'); oval.classList.add('detected'); }
-    if (confEl) confEl.textContent = confidence + '% match';
-    if (textEl) textEl.textContent = 'Face detected...';
-  }
-
-  eel.expose(showFaceNotDetected);
-  function showFaceNotDetected() {
-    var oval = document.getElementById('face-oval');
-    var textEl = document.getElementById('face-guide-text');
-    if (oval) { oval.classList.remove('detected'); oval.classList.add('failed'); }
-    if (textEl) textEl.textContent = 'Face not recognised';
-  }
-
-  eel.expose(playSuccessBeep);
-  function playSuccessBeep() {
-    try {
-      var ctx = new (window.AudioContext || window.webkitAudioContext)();
-      var osc = ctx.createOscillator();
-      var gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(880, ctx.currentTime); // A5
-      gain.gain.setValueAtTime(0.1, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.5);
-    } catch(e) { console.warn('Audio beep error', e); }
-  }
-
-  // ── eel-exposed: Hide SVG loader → show face auth animation ──────────────
-  eel.expose(hideLoader);
-  function hideLoader() {
-    console.log('hideLoader called');
-    $('#Loader').attr('hidden', true);
-    $('#FaceAuth').removeAttr('hidden');
-    DisplayMessage('Ready for face authentication...');
-  }
-
-  // ── eel-exposed: Face auth detected → show success animation ─────────────
-  eel.expose(hideFaceAuth);
-  function hideFaceAuth() {
-    console.log('hideFaceAuth called — face recognised!');
-    $('#FaceAuth').attr('hidden', true);
-    $('#FaceAuthSuccess').removeAttr('hidden');
-    DisplayMessage('Face recognised!');
-  }
-
-  // ── eel-exposed: Face auth success → show greeting animation ─────────────
-  eel.expose(hideFaceAuthSuccess);
-  function hideFaceAuthSuccess() {
-    $('#FaceAuthSuccess').attr('hidden', true);
-    $('#HelloGreet').removeAttr('hidden');
-    var name = localStorage.getItem('jarvis-user-name') || 'User';
-    DisplayMessage('Welcome, ' + name + '!');
-  }
-
-  // ── eel-exposed: Hide start screen → animate in the hood ─────────────────
-  eel.expose(hideStart);
-  function hideStart() {
-    console.log('hideStart called — transitioning to main UI');
-    $('#Start').attr('hidden', true);
-    setTimeout(function () {
-      $('#Oval')
-        .addClass('animate__animated animate__zoomIn')
-        .removeAttr('hidden')
-        .show();
-    }, 800);
-  }
-
-  // ── eel-exposed: Show auth failed state ──────────────────────────────────
-  eel.expose(showAuthFailed);
-  function showAuthFailed() {
-    console.log('showAuthFailed called');
-    $('#FaceAuth').attr('hidden', true);
-    $('#HelloGreet').attr('hidden', true);
-    DisplayMessage('Face not recognised. Please try again.');
-
-    // Show retry button
+  // ── Set Wish Message on Load ──────────────────────────────────────────────
+  function setWishMessage() {
     var wishEl = document.getElementById('WishMessage');
     if (wishEl) {
-      wishEl.innerHTML = 'Face not recognised &mdash; '
-        + '<button onclick="retryAuth()" class="retry-auth-btn">Retry</button>';
+      var time = new Date().getHours();
+      if (time < 12) wishEl.textContent = "Good Morning";
+      else if (time < 18) wishEl.textContent = "Good Afternoon";
+      else wishEl.textContent = "Good Evening";
     }
   }
+  setWishMessage();
 
-  window.retryAuth = function () {
-    DisplayMessage('Retrying face authentication...');
-    var wishEl = document.getElementById('WishMessage');
-    if (wishEl) wishEl.textContent = 'Retrying...';
-    $('#FaceAuth').removeAttr('hidden');
-    try { eel.retryFaceAuth()(); } catch(e) { console.error('retryFaceAuth error:', e); }
-  };
-
-  // ── eel-exposed: Set user name from Python config ─────────────────────────
   eel.expose(setUserName);
   function setUserName(name) {
     localStorage.setItem('jarvis-user-name', name);
@@ -283,13 +154,9 @@ $(document).ready(function () {
     if (el) el.textContent = name;
   }
 
-  // ── eel-exposed: Web-RAG status updates from Python ───────────────────────
   eel.expose(setWebStatus);
   function setWebStatus(state, text) {
     setStatus(state, text);
-    // Also update the siri-text for visibility in the SiriWave section
-    var siriText = document.getElementById('siri-text');
-    if (siriText) siriText.textContent = text;
   }
 
 });

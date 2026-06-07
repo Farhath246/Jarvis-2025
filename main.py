@@ -95,6 +95,7 @@ def start() -> None:
 
     # ── GUI Mode ──────────────────────────────────────────────────────────
     import eel
+    import backend.auth.user_auth  # Import user_auth to register its eel endpoints
 
     eel.init("frontend")
     play_assistant_sound()
@@ -102,19 +103,16 @@ def start() -> None:
     @eel.expose
     def init():
         """Called by JavaScript when the page is ready."""
-        logger.info("init() called from JS — starting face auth flow")
-        try:
-            eel.hideLoader()
-        except Exception as e:
-            logger.warning("eel.hideLoader error: %s", e)
-
+        logger.info("init() called from JS")
         # Inject user name into the frontend
         try:
             eel.setUserName(USER_CALL_NAME)
         except Exception as e:
             logger.warning("eel.setUserName error: %s", e)
 
-        speak("Welcome to Jarvis")
+    @eel.expose
+    def startFaceAuth():
+        """Called by the frontend to initiate face login."""
         speak("Ready for face authentication")
         run_face_auth()
 
@@ -127,8 +125,8 @@ def start() -> None:
 
     # Open in default browser unless in desktop mode
     if os.environ.get("JARVIS_DESKTOP_MODE") != "1":
-        webbrowser.open("http://127.0.0.1:8000/index.html")
-    eel.start("index.html", mode=None, host="localhost", block=True)
+        webbrowser.open("http://127.0.0.1:8000/auth.html")
+    eel.start("auth.html", mode=None, host="localhost", block=True)
 
 
 

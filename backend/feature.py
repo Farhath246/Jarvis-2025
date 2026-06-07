@@ -935,7 +935,7 @@ def _try_ollama(query: str, system_instruction: str) -> str | None:
             "prompt": f"System: {system_instruction}\n\nUser: {query}\n\nJarvis:",
             "stream": False
         }
-        response = requests.post(f"{OLLAMA_HOST}/api/generate", json=payload, timeout=30)
+        response = requests.post(f"{OLLAMA_HOST}/api/generate", json=payload, timeout=180)
         elapsed = int((time.time() - start) * 1000)
 
         if response.status_code == 200:
@@ -1217,10 +1217,24 @@ def generate_code(query: str) -> None:
         
         speak("Generating code, please wait...")
         
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt
-        )
+        models_to_try = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+        response = None
+        
+        for model_name in models_to_try:
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt
+                )
+                break
+            except Exception as e:
+                logger.warning("Failed to generate code with %s: %s", model_name, e)
+                time.sleep(2)
+                
+        if not response:
+            speak("Sorry, the code generation service is currently unavailable due to high demand. Please try again later.")
+            return
+
         text = response.text.strip()
         
         # Clean up markdown code blocks if the model returned them

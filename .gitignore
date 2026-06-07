@@ -57,10 +57,10 @@ envJarvis_old/
 # AutoML models directory
 .models/
 
-
 # Runtime-generated files
 jarvis_notes.txt
 contacts.csv
+search_result.html
 
 # Edge-TTS temporary audio cache
 .tts_cache/

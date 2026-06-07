@@ -283,8 +283,10 @@ def detect_search_intent_and_reformulate(query: str, current_time: str) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 def google_search(query: str, num_results: int = 5) -> list[dict]:
     """
-    Scrape Google search results and return a list of dicts:
+    Scrape DuckDuckGo search results (using HTML version to avoid JS blockers) 
+    and return a list of dicts:
         [{"title": ..., "url": ..., "snippet": ...}, ...]
+    Note: Function kept as google_search for compatibility but uses DuckDuckGo.
     """
     try:
         from bs4 import BeautifulSoup
@@ -292,61 +294,41 @@ def google_search(query: str, num_results: int = 5) -> list[dict]:
         logger.error("beautifulsoup4 is not installed. Run: pip install beautifulsoup4")
         return []
 
-    encoded_query = urllib.parse.quote(query)
-    url = f"https://www.google.com/search?q={encoded_query}&gbv=1&num={num_results + 3}"
-
+    url = "https://html.duckduckgo.com/html/"
     start = time.time()
     try:
-        resp = requests.get(url, headers=_SEARCH_HEADERS, timeout=_SCRAPE_TIMEOUT)
+        resp = requests.post(url, data={"q": query}, headers=_SEARCH_HEADERS, timeout=_SCRAPE_TIMEOUT)
         elapsed = int((time.time() - start) * 1000)
         if resp.status_code == 200:
             log_api_call("google_search", latency_ms=elapsed, success=True)
         else:
-            logger.warning("Google search returned status %d", resp.status_code)
+            logger.warning("DuckDuckGo search returned status %d", resp.status_code)
             log_api_call("google_search", latency_ms=elapsed, success=False, error_msg=f"HTTP status {resp.status_code}")
             return []
     except Exception as e:
         elapsed = int((time.time() - start) * 1000)
-        logger.error("Google search request failed: %s", e)
+        logger.error("Search request failed: %s", e)
         log_api_call("google_search", latency_ms=elapsed, success=False, error_msg=str(e))
-        log_error("google_search", f"Google search request failed: {e}", severity="warning")
+        log_error("google_search", f"Search request failed: {e}", severity="warning")
         return []
 
     soup = BeautifulSoup(resp.text, "html.parser")
     results = []
 
-    for g in soup.find_all("div", class_="g"):
-        link_el = g.find("a")
-        title_el = g.find("h3")
+    for result in soup.find_all("div", class_="result"):
+        title_el = result.find("h2", class_="result__title")
+        link_el = result.find("a", class_="result__url")
+        snippet_el = result.find("a", class_="result__snippet")
 
-        # Try multiple selectors for the snippet
-        snippet_el = (
-            g.find("span", class_="st")
-            or g.find("div", class_="VwiC3b")
-            or g.find("span", class_="aCOpRe")
-        )
-        if not snippet_el:
-            for s in g.find_all("span"):
-                if len(s.get_text().strip()) > 30:
-                    snippet_el = s
-                    break
-
-        if not link_el:
+        if not link_el or not title_el:
             continue
 
         href = link_el.get("href", "")
-        # Google wraps links in /url?q=<actual_url>
-        if href.startswith("/url?q="):
-            parsed = urllib.parse.urlparse(href)
-            qs = urllib.parse.parse_qs(parsed.query)
-            if "q" in qs:
-                href = qs["q"][0]
-
         if not href.startswith("http"):
             continue
 
-        title = title_el.get_text().strip() if title_el else "Search Result"
-        snippet = snippet_el.get_text().strip() if snippet_el else ""
+        title = title_el.get_text(strip=True)
+        snippet = snippet_el.get_text(strip=True) if snippet_el else ""
 
         # Deduplicate by URL
         if href not in [r["url"] for r in results]:
@@ -355,7 +337,7 @@ def google_search(query: str, num_results: int = 5) -> list[dict]:
         if len(results) >= num_results:
             break
 
-    logger.info("Google search returned %d results for: %s", len(results), query)
+    logger.info("Search returned %d results for: %s", len(results), query)
     return results
 
 
@@ -474,9 +456,10 @@ def synthesize_response(query: str, context: str, sources: list[dict], current_t
     system_instruction = (
         "You are Jarvis, an AI desktop assistant with access to real-time web search results. "
         f"The current date and time is {current_time}. "
-        "Answer the user's question accurately and comprehensively using ONLY the provided search context. "
+        "Answer the user's question accurately and comprehensively using the provided search context. "
         "Cite your sources using numbered references like [1], [2], etc. "
-        "If the search context does not contain enough information, say so honestly. "
+        "If the search context does not contain the exact information requested, provide the closest relevant information found in the context (e.g., today's price if yesterday's is unavailable) instead of saying you don't have enough information. "
+        "Do not apologize or refuse to answer. "
         "Detect the language of the user's input. "
         "If the user talks in Hinglish (Hindi written in Latin/Roman script), reply in Hinglish. "
         "If the user talks in Urdu (either in Urdu script or Romanized Urdu), understand their query and reply in English. "
@@ -524,7 +507,7 @@ def _synthesize_ollama(system_instruction: str, user_prompt: str) -> str | None:
             "prompt": f"System: {system_instruction}\n\n{user_prompt}",
             "stream": False
         }
-        response = requests.post(f"{OLLAMA_HOST}/api/generate", json=payload, timeout=30)
+        response = requests.post(f"{OLLAMA_HOST}/api/generate", json=payload, timeout=180)
         elapsed = int((time.time() - start) * 1000)
 
         if response.status_code == 200:

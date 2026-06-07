@@ -1,83 +1,22 @@
 /**
- * main.js — UI interactions, live clock, SiriWave, input controls.
+ * main.js — UI interactions, simple chatbot logic, input controls.
  */
 
 $(document).ready(function () {
 
-  // ── Set user name from config (exposed by Python or stored locally) ───────
+  // ── Set user name ───────────────────────────────────────────────────────────
   var storedName = localStorage.getItem('jarvis-user-name') || 'User';
   var nameEl = document.getElementById('userName');
   if (nameEl) nameEl.textContent = storedName;
 
-  // ── Restore saved accent colour ───────────────────────────────────────────
-  var savedAccent = localStorage.getItem('jarvis-accent');
+  // ── Restore saved theme ───────────────────────────────────────────────────
+  var savedAccent = localStorage.getItem('jarvis-theme');
   if (savedAccent) {
-    applyAccent(savedAccent);
+    applyTheme(savedAccent);
     $('#settingAccent').val(savedAccent);
   }
 
-  // ── Textillate animations (must init BEFORE calling eel.init) ────────────
-  try {
-    $('.text').textillate({
-      loop: true, speed: 1500, sync: true,
-      in:  { effect: 'bounceIn' },
-      out: { effect: 'bounceOut' },
-    });
-  } catch(e) { console.warn('textillate .text error:', e); }
-
-  try {
-    $('.siri-message').textillate({
-      loop: true, sync: true,
-      in:  { effect: 'fadeInUp',  sync: true },
-      out: { effect: 'fadeOutUp', sync: true },
-    });
-  } catch(e) { console.warn('textillate .siri-message error:', e); }
-
-  // ── SiriWave (responsive width) ────────────────────────────────────────────
-  var siriWave;
-  function initSiriWave() {
-    var container = document.getElementById('siri-container');
-    if (!container) return;
-    var width = Math.min(container.parentElement.offsetWidth || 900, 900);
-    try {
-      siriWave = new SiriWave({
-        container: container,
-        width: width,
-        style: 'ios9',
-        amplitude: '1',
-        speed: '0.30',
-        height: 200,
-        autostart: true,
-      });
-    } catch(e) { console.warn('SiriWave init error:', e); }
-  }
-  initSiriWave();
-
-  // Reinitialise SiriWave on resize for responsiveness
-  var resizeTimer;
-  window.addEventListener('resize', function () {
-    clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(function () {
-      var container = document.getElementById('siri-container');
-      if (container) container.innerHTML = '';
-      initSiriWave();
-    }, 300);
-  });
-
-  // ── Live HUD clock & date ─────────────────────────────────────────────────
-  function updateClock() {
-    var now  = new Date();
-    var time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    var date = now.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
-    var clockEl = document.getElementById('hud-clock');
-    var dateEl  = document.getElementById('hud-date');
-    if (clockEl) clockEl.textContent = time;
-    if (dateEl)  dateEl.textContent  = date;
-  }
-  updateClock();
-  setInterval(updateClock, 1000);
-
-  // ── Trigger Python init AFTER textillate is ready (200ms delay) ───────────
+  // ── Trigger Python init (delay slightly) ──────────────────────────────────
   setTimeout(function () {
     console.log('Calling eel.init()...');
     try {
@@ -87,25 +26,17 @@ $(document).ready(function () {
     }
   }, 200);
 
-  // ── Settings: accent colour picker ────────────────────────────────────────
+  // ── Settings: Theme picker ────────────────────────────────────────────────
   $('#applySettingsBtn').on('click', function () {
     var accent = $('#settingAccent').val();
-    applyAccent(accent);
-    localStorage.setItem('jarvis-accent', accent);
+    applyTheme(accent);
+    localStorage.setItem('jarvis-theme', accent);
   });
 
-  function applyAccent(accent) {
+  function applyTheme(accent) {
+    // For pure grayscale, we'll just set text-primary / accent color
+    // We expect accent to be #FFFFFF, #AAAAAA, or #555555
     document.documentElement.style.setProperty('--accent', accent);
-    document.documentElement.style.setProperty('--accent-dim',  hexToRgba(accent, 0.15));
-    document.documentElement.style.setProperty('--accent-glow', hexToRgba(accent, 0.4));
-    document.documentElement.style.setProperty('--border', hexToRgba(accent, 0.2));
-  }
-
-  function hexToRgba(hex, alpha) {
-    var r = parseInt(hex.slice(1, 3), 16);
-    var g = parseInt(hex.slice(3, 5), 16);
-    var b = parseInt(hex.slice(5, 7), 16);
-    return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
   }
 
   // ── Mic button ────────────────────────────────────────────────────────────
@@ -113,25 +44,36 @@ $(document).ready(function () {
     try { eel.play_assistant_sound(); } catch(e) {}
 
     $('#MicBtn').addClass('listening');
-    setHudStatus('listening', 'Listening\u2026');
-
-    $('#Oval').attr('hidden', true).hide();
-    $('#SiriWave').removeAttr('hidden').show();
+    setHudStatus('listening', 'Listening...');
 
     try { eel.takeAllCommands()(); } catch(e) { console.error('eel.takeAllCommands error:', e); }
   });
 
-  // ── Keyboard hotkey: Win+J (triggered by hotword process) ────────────────
+  // ── Keyboard hotkey: Win+J ────────────────────────────────────────────────
   document.addEventListener('keyup', function (e) {
     if (e.key === 'j' && e.metaKey) {
       try { eel.play_assistant_sound(); } catch(e) {}
       $('#MicBtn').addClass('listening');
-      setHudStatus('listening', 'Listening\u2026');
-      $('#Oval').attr('hidden', true).hide();
-      $('#SiriWave').removeAttr('hidden').show();
+      setHudStatus('listening', 'Listening...');
       try { eel.takeAllCommands()(); } catch(e) {}
     }
   });
+
+  // ── Autocomplete for chatbox ────────────────────────────────────────────────
+  var availableCommands = [
+    "open google", "open youtube", "play music", "what is the time",
+    "what is the date", "tell me a joke", "open monitor", "take a screenshot",
+    "weather in london", "latest news", "shutdown system", "restart system", "sleep mode"
+  ];
+
+  if ($.ui && $.ui.autocomplete) {
+    $('#chatbox').autocomplete({
+      source: availableCommands,
+      minLength: 1,
+      classes: { "ui-autocomplete": "jarvis-autocomplete" },
+      position: { my: "left bottom-10", at: "left top", collision: "flip" }
+    });
+  }
 
   // ── Chatbox input: toggle Mic / Send button (debounced) ───────────────────
   var inputTimer;
@@ -162,9 +104,7 @@ $(document).ready(function () {
     var message = $('#chatbox').val().trim();
     if (!message) return;
 
-    $('#Oval').attr('hidden', true).hide();
-    $('#SiriWave').removeAttr('hidden').show();
-    setHudStatus('processing', 'Processing\u2026');
+    setHudStatus('processing', 'Processing...');
 
     try { eel.takeAllCommands(message); } catch(e) { console.error('eel.takeAllCommands error:', e); }
 
